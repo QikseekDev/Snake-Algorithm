@@ -622,9 +622,9 @@ function hamiltonShortcut(st,aggressive){
     for(let k=1;k<=gain;k++)if(occupied.has((hi+k)%N)){blocked=true;break}
     if(blocked){rej(sc,"jumps over own body");note(d,"jumps over body",gain);continue}
     const space=freeSpace(st,body);
-    const roomNeeded=Math.max(body.length,Math.round(body.length*(cfg.on?2/Math.max(.5,cfg.riskW):2)));
+    const roomNeeded=Math.min(empty,Math.max(4,Math.round(body.length*(cfg.on?1/Math.max(.25,cfg.riskW):0.8))));
     if(space<roomNeeded){rej(sc,"too little room ("+space+"<"+roomNeeded+")");note(d,"room "+space,gain);continue}
-    if(space<N-body.length){rej(sc,"splits the board");note(d,"splits board",gain);continue}
+    if(len/N>0.5&&space<(N-body.length)*0.5){rej(sc,"splits the board");note(d,"splits board",gain);continue}
     if(!tailReachable(st,body)){rej(sc,"tail unreachable");note(d,"tail lost",gain);continue}
     const dry=cfg.on?Math.max(5,Math.round(cfg.horizon*1.5)):Math.min(120,Math.max(30,body.length*2));
     if(!escapable(st,body,dry)){rej(sc,"dry-run dies");note(d,"dry-run dies",gain);continue}
@@ -715,8 +715,8 @@ function hybridMove(st){
   /* Oracle: it routes through apples it has foreseen, so it only needs the
      cycle as a true endgame fallback (board nearly full), not at the usual
      crowdedness threshold. */
-  const cycleAt=oracle?Math.max(cfg.cycleAt,0.82):cfg.cycleAt;
-  const exitAt=oracle?Math.max(cfg.exitAt,cycleAt-0.1):cfg.exitAt;
+  const cycleAt=cfg.cycleAt;
+  const exitAt=cfg.exitAt;
   if(fill>=cycleAt)hy.cycle=true;
   if(hy.cycle&&!hy.lock&&fill<exitAt)hy.cycle=false;         // room opened up again (multi-apple boards)
   if(hy.cycle){
