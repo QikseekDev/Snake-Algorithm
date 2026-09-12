@@ -73,6 +73,30 @@ canvas{position:relative;width:min(100%,calc(100vh - 130px));max-width:900px;asp
         <label class="wide">Routes examined per pass <b id="advWidthOut" style="color:var(--text)">8</b> <input id="advWidth" type="range" min="2" max="32" value="8"></label>
         <label class="wide">Apple chaining <select id="advChain"><option value="1" selected>Reward reachable next apple</option><option value="2">Strongly prefer apple chains</option><option value="0">Ignore next apple</option></select></label>
         <label class="wide">Search depth <select id="advDepth"><option value="1" selected>Standard (1 route ply)</option><option value="2">Deep (re-score after meal)</option></select></label>
+        <label class="wide">Internal algorithm <select id="advSearch">
+          <option value="auto" selected>Auto — best per situation (suggested)</option>
+          <option value="bfs">Breadth-First Search — shortest, time-aware</option>
+          <option value="astar">A* — shortest with heuristic (fast)</option>
+          <option value="dijkstra">Dijkstra — uniform cost, exhaustive</option>
+          <option value="greedy">Greedy Best-First — fastest, riskiest</option>
+          <option value="longest">Longest Safe Path — survival first</option>
+          <option value="dfs">Depth-First Search — exploratory, weakest</option>
+        </select></label>
+        <label class="wide">Trap prevention <select id="advTrap">
+          <option value="0">Off</option>
+          <option value="1" selected>Standard (suggested)</option>
+          <option value="2">Strict — never split the board</option>
+          <option value="3">Paranoid — long escape required</option>
+        </select></label>
+        <label class="wide">Coiling factor <b id="advCoilOut" style="color:var(--text)">35%</b> <input id="advCoil" type="range" min="0" max="100" value="35"></label>
+        <label class="wide">Tail clearance buffer <b id="advTailOut" style="color:var(--text)">15% of length</b> <input id="advTail" type="range" min="0" max="60" value="15"></label>
+        <label class="wide">Adaptive horizon <select id="advAdapt"><option value="1" selected>On — scale with board fill (suggested)</option><option value="0">Off — fixed horizon</option></select></label>
+        <label class="wide">Idle stalling mode <select id="advIdle">
+          <option value="tail" selected>Chase own tail (suggested)</option>
+          <option value="coil">Coil up compactly</option>
+          <option value="cycle">Walk the Hamiltonian cycle</option>
+        </select></label>
+        <button id="advGod" class="wide primary">Super AI (God Mode)</button>
         <button id="advReset" class="wide">Reset tuning to defaults</button>
       </div>
     </div>
@@ -113,6 +137,7 @@ const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
 const $=id=>document.getElementById(id);
 const ui={score:$("score"),high:$("high"),length:$("length"),speedOut:$("speedOut"),modeText:$("modeText"),aiState:$("aiState"),algText:$("algText"),overlay:$("overlay"),overlayTitle:$("overlayTitle"),overlayText:$("overlayText"),overlayButton:$("overlayButton"),humanBtn:$("humanBtn"),aiBtn:$("aiBtn"),algorithm:$("algorithm"),restart:$("restart"),pause:$("pause"),speed:$("speed"),boost:$("boost"),size:$("size"),pathToggle:$("pathToggle"),appleCount:$("appleCount"),appleCountOut:$("appleCountOut"),competitionBtn:$("competitionBtn"),competitionSpeed:$("competitionSpeed"),competitionSpeedWrap:$("competitionSpeedWrap"),competitionPanel:$("competitionPanel"),competitionBest:$("competitionBest"),competitionWinner:$("competitionWinner"),leaderboard:$("leaderboard"),competitionRestart:$("competitionRestart"),debugPanel:$("debugPanel"),debugOut:$("debugOut"),
   advPanel:$("advPanel"),advOn:$("advOn"),advOff:$("advOff"),advBody:$("advBody"),advCycle:$("advCycle"),advCycleOut:$("advCycleOut"),advMargin:$("advMargin"),advMarginOut:$("advMarginOut"),advHorizon:$("advHorizon"),advHorizonOut:$("advHorizonOut"),advBold:$("advBold"),advBoldOut:$("advBoldOut"),advRisk:$("advRisk"),advRiskOut:$("advRiskOut"),advPatience:$("advPatience"),advPatienceOut:$("advPatienceOut"),advWidth:$("advWidth"),advWidthOut:$("advWidthOut"),advChain:$("advChain"),advDepth:$("advDepth"),advReset:$("advReset"),advPro:$("advPro"),
+  advSearch:$("advSearch"),advTrap:$("advTrap"),advCoil:$("advCoil"),advCoilOut:$("advCoilOut"),advTail:$("advTail"),advTailOut:$("advTailOut"),advAdapt:$("advAdapt"),advIdle:$("advIdle"),advGod:$("advGod"),
   dbgLevel:$("dbgLevel"),dbgFreeze:$("dbgFreeze"),dbgCopy:$("dbgCopy"),dbgMode:$("dbgMode"),dbgTime:$("dbgTime"),dbgSafety:$("dbgSafety")};
 
 /* ============================================================
@@ -120,8 +145,10 @@ const ui={score:$("score"),high:$("high"),length:$("length"),speedOut:$("speedOu
    Every knob has a safe default that reproduces the standard
    behaviour, so Standard mode === the original tuned AI.
    ============================================================ */
-const ADV_DEFAULTS={cycle:45,margin:30,horizon:70,bold:8,risk:50,patience:90,width:8,chain:1,depth:1};
-const ADV_PRO={cycle:35,margin:40,horizon:120,bold:11,risk:35,patience:120,width:12,chain:2,depth:2};
+const ADV_DEFAULTS={cycle:45,margin:30,horizon:70,bold:8,risk:50,patience:90,width:8,chain:1,depth:1,search:"auto",trap:1,coil:35,tail:15,adapt:1,idle:"tail"};
+const ADV_PRO={cycle:35,margin:40,horizon:120,bold:11,risk:35,patience:120,width:12,chain:2,depth:2,search:"auto",trap:2,coil:55,tail:25,adapt:1,idle:"tail"};
+/* Super AI (God Mode): maximum-survival preset — slower thinking, near-perfect boards. */
+const ADV_GOD={cycle:30,margin:55,horizon:180,bold:6,risk:25,patience:150,width:20,chain:2,depth:2,search:"auto",trap:3,coil:70,tail:35,adapt:1,idle:"coil"};
 const adv={on:false,...ADV_DEFAULTS};
 function advCfg(){
   if(!adv.on)return advCfg.standard;
@@ -139,9 +166,15 @@ function advCfg(){
     width:adv.width,
     chain:Number(adv.chain),
     depth:Number(adv.depth),
+    search:adv.search||"auto",
+    trap:Number(adv.trap),
+    coil:adv.coil/100,
+    tailBuf:adv.tail/100,
+    adapt:Number(adv.adapt)===1,
+    idle:adv.idle||"tail",
   };
 }
-advCfg.standard={on:false,cycleAt:.45,exitAt:.30,marginPct:.30,horizon:70,boldDiv:4,timidDiv:8,riskW:1,patience:.9,width:8,chain:1,depth:1};
+advCfg.standard={on:false,cycleAt:.45,exitAt:.30,marginPct:.30,horizon:70,boldDiv:4,timidDiv:8,riskW:1,patience:.9,width:8,chain:1,depth:1,search:"auto",trap:1,coil:.35,tailBuf:.25,adapt:false,idle:"tail"};
 
 const DIRS={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}};
 const ORDER=["up","right","down","left"];
@@ -376,6 +409,7 @@ function safeFoodPath(st,kind){
 
 /* ---------- survival move: maximise room, stay compact ---------- */
 function survivalMove(st,opts){
+  const cfg=stCfg(st);
   const greedForFood=opts&&opts.food;
   let best=null,bestScore=-Infinity;
   for(const d of legalMoves(st)){
@@ -384,10 +418,10 @@ function survivalMove(st,opts){
     const space=freeSpace(st,body);
     const tail=tailReachable(st,body)?1:0;
     const head=body[0];
-    let v=space*100+tail*4000+wallHug(st,head,body)*12;
+    let v=space*100+tail*4000+wallHug(st,head,body)*(12+cfg.coil*60);
     if(space<body.length)v-=6000;
     if(greedForFood)v-=nearestFoodDist(st,head)*3;
-    else v-=man(head,body[body.length-1]);
+    else v-=man(head,body[body.length-1])*(1+cfg.coil*3);
     if(v>bestScore){bestScore=v;best=d}
   }
   return best||legalMoves(st)[0]||null;
@@ -502,7 +536,7 @@ function hamiltonShortcut(st,aggressive){
   const empty=N-len;
   const distTail=(ti-hi+N)%N||N;
   // safety buffer between the shortcut landing spot and the tail
-  const buffer=Math.max(4,Math.ceil(len*(cfg.on?0.25/Math.max(.25,cfg.riskW):0.25)));
+  const buffer=Math.max(4,Math.ceil(len*(Math.max(.05,cfg.tailBuf)/Math.max(.25,cfg.riskW))));
   const div=aggressive?(cfg.on?cfg.boldDiv:4):(cfg.on?cfg.timidDiv:8);
   let maxJump=distTail-buffer;
   if(empty<b*2)maxJump=0;                                  // crowded: pure cycle, no risks
@@ -577,6 +611,7 @@ function hybridMove(st){
   const dbg=st.debug={fill,len,moves:st.moves,lines:[],plans:[],cfg,viz:{rejected:[],scores:[],accepted:null,dryRun:[]},alg:"hybrid"};
   dbg.lines.push("board "+Math.round(fill*100)+"% full · snake "+len+" · "+(st.moves-hy.lastEat)+" moves since last apple"+(starving?" (starving)":""));
   if(cfg.on)dbg.lines.push("tuning: cycle@"+Math.round(cfg.cycleAt*100)+"% · margin "+Math.round(cfg.marginPct*100)+"% · horizon "+cfg.horizon+" · boldness "+adv.bold+"/16 · risk "+adv.risk+"/100 · patience "+Math.round(cfg.patience*100)+"% · width "+cfg.width+" · "+(cfg.depth>1?"deep":"standard")+" depth");
+  if(cfg.on)dbg.lines.push("tuning+: search "+cfg.search+" · trap "+cfg.trap+" · coil "+Math.round(cfg.coil*100)+"% · tail buffer "+Math.round(cfg.tailBuf*100)+"% · horizon "+(cfg.adapt?"adaptive":"fixed")+" · idle "+cfg.idle);
 
   /* --- endgame: once the board is crowded the Hamiltonian cycle with
      safe shortcuts is strictly better than greedy planning, because it
@@ -596,7 +631,11 @@ function hybridMove(st){
 
   // --- 1+2+3: safest profitable apple route -------------------
   const cands=[];
-  const kinds=cfg.depth>1?[null,"astar","dijkstra","greedy"]:[null,"astar"];
+  const SEARCH_KIND={bfs:null,astar:"astar",dijkstra:"dijkstra",greedy:"greedy",dfs:"dfs",longest:null};
+  const pinned=cfg.search&&cfg.search!=="auto";
+  const longestBias=cfg.search==="longest";
+  const kinds=pinned?[SEARCH_KIND[cfg.search]]:(cfg.depth>1?[null,"astar","dijkstra","greedy"]:[null,"astar"]);
+  if(pinned)dbg.lines.push("internal algorithm: "+({bfs:"Breadth-First Search",astar:"A* Pathfinding",dijkstra:"Dijkstra",greedy:"Greedy Best-First",longest:"Longest Safe Path",dfs:"Depth-First Search"}[cfg.search]));
   for(const kind of kinds){
     for(const c of foodPaths(st,kind)){
       if(cands.some(o=>o.path.length===c.path.length&&o.path[0]===c.path[0]&&eq(o.food,c.food)))continue;
@@ -627,8 +666,16 @@ function hybridMove(st){
       // dry-run the future: eating is only allowed if the snake can still
       // wriggle for a long stretch afterwards
       if(checkFuture&&fill>0.12&&cfg.horizon>0){
-        const horizon=Math.min(cfg.horizon,Math.max(12,Math.floor(body.length*0.7)));
+        const baseH=cfg.adapt?Math.max(8,Math.round(cfg.horizon*(0.5+fill*1.8))):cfg.horizon;
+        const horizon=Math.max(12,Math.min(baseH,Math.max(12,Math.floor(body.length*0.9))));
         if(!escapable(after,body,horizon)){drop(c,"dry-run dies ("+horizon+" moves)");continue}
+      }
+      if(cfg.trap>0){
+        const totalFree=Math.max(1,N-body.length);
+        const need=Math.ceil(body.length*(1+0.35*(cfg.trap-1)));
+        if(space<need){drop(c,"trap risk: room "+space+" < "+need);continue}
+        if(cfg.trap>=2&&space<totalFree){drop(c,"trap risk: splits the board");continue}
+        if(cfg.trap>=3&&!escapable(after,body,Math.max(20,body.length))){drop(c,"trap risk: no long escape");continue}
       }
       const freeCells=Math.max(1,N-body.length);
       const roomRatio=space/freeCells;
@@ -636,7 +683,9 @@ function hybridMove(st){
       let score=space*4/Math.max(.3,cfg.riskW)-c.path.length*4*cfg.riskW+roomRatio*900/Math.max(.3,cfg.riskW);
       if(space>=freeCells)score+=500;                       // keeps the board in one piece
       // prefer meals that leave the head near the tail: compact snake, fewer dead pockets
-      score-=man(body[0],body[body.length-1])*2;
+      score-=man(body[0],body[body.length-1])*(2+cfg.coil*6);
+      score+=wallHug(after,body[0],body)*cfg.coil*40;
+      if(longestBias)score+=space*6;
       const chainable=after.foods.length&&bfsTime(after,body,cell=>after.foods.some(f=>ci(b,f)===cell));
       if(cfg.chain&&chainable)score+=150*cfg.chain;
       if(cfg.depth>1&&!escapable(after,body,Math.min(25,Math.max(8,body.length))))score-=400;
@@ -661,6 +710,13 @@ function hybridMove(st){
   const done=(move,label)=>{dbg.decision=label;dbg.ms=(typeof performance!=="undefined"?performance.now():Date.now())-t0;return move};
 
   // --- 4: no safe apple -> stall productively -----------------
+  if(cfg.idle==="cycle"){
+    const cw=hamiltonShortcut(st,false);
+    if(cw){const body=bodyAfter(st,cw);if(body&&tailReachable(st,body)){dbg.lines.push("decision: idle stalling — walking the Hamiltonian cycle");return done(cw,"idle cycle walk")}}
+  }else if(cfg.idle==="coil"){
+    const cm=survivalMove(st);
+    if(cm){const body=bodyAfter(st,cm);if(body&&tailReachable(st,body)){dbg.lines.push("decision: idle stalling — coiling up compactly");return done(cm,"idle coil")}}
+  }
   const tailCell=ci(b,sn[len-1]);
   const tailPath=bfsTime(st,sn,c=>c===tailCell);
   if(tailPath&&tailPath.length){
@@ -1116,6 +1172,10 @@ function advSync(){
   ui.advCycle.value=adv.cycle;ui.advMargin.value=adv.margin;ui.advHorizon.value=adv.horizon;
   ui.advBold.value=adv.bold;ui.advRisk.value=adv.risk;ui.advPatience.value=adv.patience;
   ui.advWidth.value=adv.width;ui.advChain.value=String(adv.chain);ui.advDepth.value=String(adv.depth);
+  ui.advCoilOut.textContent=adv.coil+"%";
+  ui.advTailOut.textContent=adv.tail+"% of length";
+  ui.advSearch.value=adv.search;ui.advTrap.value=String(adv.trap);ui.advCoil.value=adv.coil;
+  ui.advTail.value=adv.tail;ui.advAdapt.value=String(adv.adapt);ui.advIdle.value=adv.idle;
   ui.advBody.style.display=adv.on?"grid":"none";
   ui.advOn.classList.toggle("on",adv.on);ui.advOff.classList.toggle("on",!adv.on);
 }
@@ -1123,10 +1183,13 @@ const advBind=(el,key,num)=>{if(!el)return;el.addEventListener("input",()=>{adv[
 advBind(ui.advCycle,"cycle",true);advBind(ui.advMargin,"margin",true);advBind(ui.advHorizon,"horizon",true);
 advBind(ui.advBold,"bold",true);advBind(ui.advRisk,"risk",true);advBind(ui.advPatience,"patience",true);
 advBind(ui.advWidth,"width",true);advBind(ui.advChain,"chain",true);advBind(ui.advDepth,"depth",true);
+advBind(ui.advSearch,"search",false);advBind(ui.advTrap,"trap",true);advBind(ui.advCoil,"coil",true);
+advBind(ui.advTail,"tail",true);advBind(ui.advAdapt,"adapt",true);advBind(ui.advIdle,"idle",false);
 ui.advOn.onclick=()=>{adv.on=true;advSync();updateDebug()};
 ui.advOff.onclick=()=>{adv.on=false;advSync();updateDebug()};
 ui.advReset.onclick=()=>{Object.assign(adv,ADV_DEFAULTS);advSync();updateDebug()};
 ui.advPro.onclick=()=>{Object.assign(adv,ADV_PRO);adv.on=true;advSync();updateDebug()};
+ui.advGod.onclick=()=>{Object.assign(adv,ADV_GOD);adv.on=true;advSync();updateDebug()};
 advSync();
 /* ---------- Decision log controls ---------- */
 ui.dbgLevel.onchange=updateDebug;
