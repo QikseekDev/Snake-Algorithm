@@ -1,0 +1,1149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Snake AI Lab</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0f14;--panel:#121922;--panel2:#17212d;--line:#263241;--text:#eaf1f8;--muted:#8fa1b4;--accent:#2dd4bf;--accent2:#f59e0b;--bad:#fb7185;--good:#7dd3fc;--cell:#101820;--path:#60a5fa}
+*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:radial-gradient(circle at top left,#172033 0,#0b0f14 42%,#070a0e 100%);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow-x:hidden}
+button,select,input{font:inherit}button,select{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px 12px;min-height:42px}button{cursor:pointer;transition:.16s transform,.16s border-color,.16s background}button:hover{transform:translateY(-1px);border-color:#3e5369;background:#1d2a38}button:active{transform:translateY(0)}button.primary{background:linear-gradient(180deg,#22c7b5,#139b8d);border-color:#3be3d2;color:#05201d;font-weight:800}label{display:grid;gap:6px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}select,input[type=range]{width:100%}
+.app{min-height:100%;display:grid;grid-template-columns:minmax(300px,1fr) 340px;gap:18px;padding:18px;max-width:1420px;margin:0 auto}.stage{display:grid;grid-template-rows:auto 1fr;gap:14px;min-width:0}.top{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{display:flex;align-items:center;gap:12px}.mark{width:38px;height:38px;border-radius:9px;background:conic-gradient(from 180deg,var(--accent),#7dd3fc,var(--accent2),var(--accent));box-shadow:0 0 30px #2dd4bf33}.title h1{margin:0;font-size:24px;line-height:1.05;letter-spacing:0}.title p{margin:3px 0 0;color:var(--muted)}.status{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.pill{border:1px solid var(--line);background:#111923cc;border-radius:999px;padding:7px 10px;color:var(--muted)}.pill strong{color:var(--text)}
+.boardWrap{position:relative;display:grid;place-items:center;min-height:0;background:linear-gradient(180deg,#0d131b,#090d12);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 18px 60px #0008;overflow:hidden}.boardWrap:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,#ffffff08,transparent);transform:translateX(-100%);animation:sheen 8s infinite}@keyframes sheen{0%,70%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+canvas{position:relative;width:min(100%,calc(100vh - 130px));max-width:900px;aspect-ratio:1/1;border-radius:8px;background:#0b1218;image-rendering:pixelated;touch-action:none}.overlay{position:absolute;inset:14px;display:none;place-items:center;text-align:center;background:#070a0eb8;backdrop-filter:blur(5px);border-radius:8px}.overlay.show{display:grid}.modal{max-width:390px;padding:24px;border:1px solid #314154;background:#101822;border-radius:10px;box-shadow:0 20px 60px #000b}.modal h2{margin:0 0 8px;font-size:30px}.modal p{margin:0 0 18px;color:var(--muted)}
+.panel{background:#0f161f;border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:14px;align-content:start;box-shadow:0 16px 40px #0005}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px}.stat span{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}.stat b{display:block;margin-top:4px;font-size:22px}.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}.wide{grid-column:1/-1}.switch{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:8px;overflow:hidden}.switch button{border:0;border-radius:0;background:#121a24}.switch button.on{background:var(--accent);color:#06211e;font-weight:900}.readout{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}.hint{color:var(--muted);font-size:12px;margin:0}.kbd{display:inline-grid;place-items:center;min-width:23px;height:23px;border:1px solid var(--line);border-radius:5px;background:#16212c;color:#d8e6f3;font-size:12px}.touch{display:none;grid-template-columns:48px 48px 48px;gap:8px;justify-content:center}.touch button{width:48px;height:48px;padding:0;font-size:20px}.touch .up{grid-column:2}.touch .left{grid-column:1}.touch .down{grid-column:2}.touch .right{grid-column:3}.competition{display:none;gap:10px}.competition.show{display:grid}.leader{display:grid;gap:6px;max-height:310px;overflow:auto}.row{display:grid;grid-template-columns:26px 1.5fr repeat(7,.8fr);gap:6px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px;font-size:12px}.row.head{position:sticky;top:0;background:#1a2633;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;z-index:1}.dbg{display:grid;gap:8px}.dbgTitle{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}#debugOut{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#c6d6e6;white-space:pre-wrap;max-height:230px;overflow:auto}#debugOut b{color:var(--accent)}.row.dead{opacity:.58}.row b{font-size:13px}.compSummary{display:grid;grid-template-columns:1fr 1fr;gap:10px}.compSummary .stat b{font-size:17px}
+@media (max-width:900px){.app{grid-template-columns:1fr;padding:12px}.top{align-items:flex-start;flex-direction:column}.status{justify-content:flex-start}.panel{order:2}canvas{width:min(100%,80vh)}.touch{display:grid}}@media (max-width:520px){.stats,.controls{grid-template-columns:1fr}.title h1{font-size:21px}.modal h2{font-size:25px}}
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="stage">
+    <div class="top">
+      <div class="brand"><div class="mark"></div><div class="title"><h1>Snake AI Lab</h1><p>Classic snake with real pathfinding and survival strategies.</p></div></div>
+      <div class="status"><div class="pill">Mode: <strong id="modeText">Human</strong></div><div class="pill">AI: <strong id="aiState">Off</strong></div><div class="pill">Algorithm: <strong id="algText">Hybrid Smart AI</strong></div></div>
+    </div>
+    <div class="boardWrap">
+      <canvas id="game" width="720" height="720" aria-label="Snake game board"></canvas>
+      <div id="overlay" class="overlay show"><div class="modal"><h2 id="overlayTitle">Snake AI Lab</h2><p id="overlayText">Press Start to play. Toggle AI to watch the algorithms compete.</p><button id="overlayButton" class="primary">Start</button></div></div>
+    </div>
+  </section>
+  <aside class="panel">
+    <div class="stats">
+      <div class="stat"><span>Score</span><b id="score">0</b></div>
+      <div class="stat"><span>High</span><b id="high">0</b></div>
+      <div class="stat"><span>Length</span><b id="length">3</b></div>
+      <div class="stat"><span>Speed</span><b id="speedOut">8 FPS</b></div>
+    </div>
+    <div class="switch wide"><button id="humanBtn" class="on">Human Mode</button><button id="aiBtn">AI Mode</button></div>
+    <label class="wide">Algorithm
+      <select id="algorithm">
+        <option value="hybrid">Hybrid Smart AI</option>
+        <option value="bfs">Breadth-First Search</option>
+        <option value="dfs">Depth-First Search</option>
+        <option value="astar">A* Pathfinding</option>
+        <option value="dijkstra">Dijkstra</option>
+        <option value="greedy">Greedy Best-First Search</option>
+        <option value="hamilton">Hamiltonian Cycle strategy</option>
+        <option value="wall">Wall-following strategy</option>
+        <option value="flood">Flood Fill survival strategy</option>
+        <option value="longest">Longest Safe Path strategy</option>
+      </select>
+    </label>
+    <div class="controls">
+      <button id="restart" class="primary">Restart</button><button id="pause">Pause</button>
+      <label class="wide">Base speed <input id="speed" type="range" min="4" max="48" value="8"><span class="readout"><span>Calm</span><span>Fast</span></span></label>
+      <label class="wide">Boost <select id="boost"><option value="1" selected>Normal</option><option value="2">Vroom ×2</option><option value="4">Vroom ×4</option></select></label>
+      <label class="wide">Apple Count <input id="appleCount" type="range" min="1" max="10" value="1"><span class="readout"><span>1</span><span id="appleCountOut">1</span></span></label>
+      <button id="competitionBtn" class="wide">Competition Mode</button>
+      <label id="competitionSpeedWrap" class="wide" style="display:none">Competition speed <input id="competitionSpeed" type="range" min="4" max="60" value="18"><span class="readout"><span>Measured</span><span>Rapid</span></span></label>
+      <label>Board size <select id="size"><option>16</option><option selected>20</option><option>24</option><option>30</option><option>36</option><option>42</option></select></label>
+      <label>AI path <select id="pathToggle"><option value="3" selected>Route + escapes + AI thinking</option><option value="2">Route + escapes</option><option value="1">Route only</option><option value="0">Hide</option></select></label>
+    </div>
+    <div id="advPanel" class="wide dbg">
+      <span class="dbgTitle">Hybrid AI tuning</span>
+       <div class="switch wide"><button id="advOff" class="on">Standard</button><button id="advOn">Super advanced</button></div>
+       <button id="advPro" class="wide">Apply suggested pro settings</button>
+       <div id="advBody" style="display:none;gap:12px;grid-template-columns:1fr">
+        <label class="wide">Switch to cycle at <b id="advCycleOut" style="color:var(--text)">45%</b> full <input id="advCycle" type="range" min="15" max="95" value="45"></label>
+        <label class="wide">Safety margin <b id="advMarginOut" style="color:var(--text)">30% of length</b> <input id="advMargin" type="range" min="0" max="120" value="30"></label>
+        <label class="wide">Dry-run horizon <b id="advHorizonOut" style="color:var(--text)">70 moves</b> <input id="advHorizon" type="range" min="0" max="250" value="70"></label>
+        <label class="wide">Shortcut boldness <b id="advBoldOut" style="color:var(--text)">normal</b> <input id="advBold" type="range" min="1" max="16" value="8"></label>
+        <label class="wide">Risk appetite <b id="advRiskOut" style="color:var(--text)">balanced</b> <input id="advRisk" type="range" min="0" max="100" value="50"></label>
+        <label class="wide">Starvation patience <b id="advPatienceOut" style="color:var(--text)">90% of board</b> <input id="advPatience" type="range" min="20" max="300" value="90"></label>
+        <label class="wide">Routes examined per pass <b id="advWidthOut" style="color:var(--text)">8</b> <input id="advWidth" type="range" min="2" max="32" value="8"></label>
+        <label class="wide">Apple chaining <select id="advChain"><option value="1" selected>Reward reachable next apple</option><option value="2">Strongly prefer apple chains</option><option value="0">Ignore next apple</option></select></label>
+        <label class="wide">Search depth <select id="advDepth"><option value="1" selected>Standard (1 route ply)</option><option value="2">Deep (re-score after meal)</option></select></label>
+        <button id="advReset" class="wide">Reset tuning to defaults</button>
+      </div>
+    </div>
+    <div id="debugPanel" class="wide dbg" style="display:none">
+      <span class="dbgTitle">AI decision log</span>
+      <div class="controls" style="gap:8px">
+        <label>Detail <select id="dbgLevel"><option value="1">Summary</option><option value="2" selected>Detailed</option><option value="3">Everything</option></select></label>
+        <label>Log <select id="dbgFreeze"><option value="0" selected>Live</option><option value="1">Freeze</option></select></label>
+        <button id="dbgCopy" class="wide">Copy log</button>
+      </div>
+      <div class="stats" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="stat"><span>Mode</span><b id="dbgMode" style="font-size:13px">-</b></div>
+        <div class="stat"><span>Think</span><b id="dbgTime" style="font-size:13px">-</b></div>
+        <div class="stat"><span>Safety</span><b id="dbgSafety" style="font-size:13px">-</b></div>
+      </div>
+      <pre id="debugOut"></pre>
+    </div>
+    <div id="competitionPanel" class="competition wide">
+      <div class="compSummary"><div class="stat"><span>Best</span><b id="competitionBest">-</b></div><div class="stat"><span>Winner</span><b id="competitionWinner">-</b></div></div>
+      <div id="leaderboard" class="leader"></div>
+      <button id="competitionRestart" class="primary">Restart Competition</button>
+    </div>
+    <div class="touch" aria-label="Touch controls"><button class="up" data-dir="up">▲</button><button class="left" data-dir="left">◀</button><button class="down" data-dir="down">▼</button><button class="right" data-dir="right">▶</button></div>
+    <p class="hint"><b style="color:#60a5fa">Blue</b> = planned route to the apple. <b style="color:#f59e0b">Amber</b> = escape route it keeps in reserve (tail chase). <b style="color:#7dd3fc">Outlined cells</b> = other safe moves available. <b style="color:#2dd4bf">Tinted area</b> = open room it still owns (turns red when that room is too small).</p>
+    <p class="hint">With <b>AI thinking</b> shown: <b style="color:#fb7185">red dotted routes</b> = apple routes the AI rejected (hover the log for the reason), <b style="color:#a78bfa">purple</b> = Hamiltonian cycle shortcut it is taking, <b style="color:#94a3b8">grey trail</b> = the survival dry-run it simulated, and each candidate first move is labelled with its score.</p>
+    <p class="hint">Keys: <span class="kbd">↑</span> <span class="kbd">↓</span> <span class="kbd">←</span> <span class="kbd">→</span> or <span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span>. Space pauses. Human input is ignored while AI mode is enabled.</p>
+  </aside>
+</main>
+<script>
+(() => {
+"use strict";
+/* ============================================================
+   Snake AI Lab — unified engine
+   One state shape drives the single game and every competition
+   game, so all algorithms share the exact same core routines.
+   ============================================================ */
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+const $=id=>document.getElementById(id);
+const ui={score:$("score"),high:$("high"),length:$("length"),speedOut:$("speedOut"),modeText:$("modeText"),aiState:$("aiState"),algText:$("algText"),overlay:$("overlay"),overlayTitle:$("overlayTitle"),overlayText:$("overlayText"),overlayButton:$("overlayButton"),humanBtn:$("humanBtn"),aiBtn:$("aiBtn"),algorithm:$("algorithm"),restart:$("restart"),pause:$("pause"),speed:$("speed"),boost:$("boost"),size:$("size"),pathToggle:$("pathToggle"),appleCount:$("appleCount"),appleCountOut:$("appleCountOut"),competitionBtn:$("competitionBtn"),competitionSpeed:$("competitionSpeed"),competitionSpeedWrap:$("competitionSpeedWrap"),competitionPanel:$("competitionPanel"),competitionBest:$("competitionBest"),competitionWinner:$("competitionWinner"),leaderboard:$("leaderboard"),competitionRestart:$("competitionRestart"),debugPanel:$("debugPanel"),debugOut:$("debugOut"),
+  advPanel:$("advPanel"),advOn:$("advOn"),advOff:$("advOff"),advBody:$("advBody"),advCycle:$("advCycle"),advCycleOut:$("advCycleOut"),advMargin:$("advMargin"),advMarginOut:$("advMarginOut"),advHorizon:$("advHorizon"),advHorizonOut:$("advHorizonOut"),advBold:$("advBold"),advBoldOut:$("advBoldOut"),advRisk:$("advRisk"),advRiskOut:$("advRiskOut"),advPatience:$("advPatience"),advPatienceOut:$("advPatienceOut"),advWidth:$("advWidth"),advWidthOut:$("advWidthOut"),advChain:$("advChain"),advDepth:$("advDepth"),advReset:$("advReset"),advPro:$("advPro"),
+  dbgLevel:$("dbgLevel"),dbgFreeze:$("dbgFreeze"),dbgCopy:$("dbgCopy"),dbgMode:$("dbgMode"),dbgTime:$("dbgTime"),dbgSafety:$("dbgSafety")};
+
+/* ============================================================
+   Hybrid AI tuning ("super advanced" mode)
+   Every knob has a safe default that reproduces the standard
+   behaviour, so Standard mode === the original tuned AI.
+   ============================================================ */
+const ADV_DEFAULTS={cycle:45,margin:30,horizon:70,bold:8,risk:50,patience:90,width:8,chain:1,depth:1};
+const ADV_PRO={cycle:35,margin:40,horizon:120,bold:11,risk:35,patience:120,width:12,chain:2,depth:2};
+const adv={on:false,...ADV_DEFAULTS};
+function advCfg(){
+  if(!adv.on)return advCfg.standard;
+  const risk=adv.risk/50;                       // 0 = paranoid, 2 = reckless
+  return{
+    on:true,
+    cycleAt:adv.cycle/100,
+    exitAt:Math.max(.05,adv.cycle/100-.15),
+    marginPct:adv.margin/100,
+    horizon:adv.horizon,
+    boldDiv:Math.max(1,17-adv.bold),            // higher boldness = smaller divisor = longer jumps
+    timidDiv:Math.max(2,(17-adv.bold)*2),
+    riskW:risk,
+    patience:adv.patience/100,
+    width:adv.width,
+    chain:Number(adv.chain),
+    depth:Number(adv.depth),
+  };
+}
+advCfg.standard={on:false,cycleAt:.45,exitAt:.30,marginPct:.30,horizon:70,boldDiv:4,timidDiv:8,riskW:1,patience:.9,width:8,chain:1,depth:1};
+
+const DIRS={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}};
+const ORDER=["up","right","down","left"];
+const DX=ORDER.map(d=>DIRS[d].x),DY=ORDER.map(d=>DIRS[d].y);
+const ALGS={hybrid:"Hybrid Smart AI",bfs:"Breadth-First Search",dfs:"Depth-First Search",astar:"A* Pathfinding",dijkstra:"Dijkstra",greedy:"Greedy Best-First Search",hamilton:"Hamiltonian Cycle strategy",wall:"Wall-following strategy",flood:"Flood Fill survival strategy",longest:"Longest Safe Path strategy"};
+
+const key=p=>p.x+","+p.y,eq=(a,b)=>a.x===b.x&&a.y===b.y;
+const man=(a,b)=>Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
+const add=(p,d)=>({x:p.x+DIRS[d].x,y:p.y+DIRS[d].y});
+const opposite=(a,b)=>DIRS[a].x+DIRS[b].x===0&&DIRS[a].y+DIRS[b].y===0;
+const ci=(b,p)=>p.y*b+p.x;
+const cp=(b,c)=>({x:c%b,y:(c-(c%b))/b});
+const clone=body=>body.map(p=>({x:p.x,y:p.y}));
+
+/* ---------- scratch buffers (reused, avoids GC churn) ---------- */
+const buf={n:0,occ:null,dist:null,prev:null,pdir:null,mark:null,stamp:0};
+function ensureBuf(n){if(buf.n!==n){buf.n=n;buf.occ=new Int32Array(n);buf.dist=new Int32Array(n);buf.prev=new Int32Array(n);buf.pdir=new Int8Array(n);buf.mark=new Int32Array(n);buf.stamp=0}}
+
+/* ---------- occupancy with vacate times ----------
+   A body cell holding segment i (0 = head) becomes walkable
+   after (len - i) moves, because the tail keeps sliding away.
+   That makes planning time-aware instead of pessimistic.       */
+function fillOcc(b,body,occ){occ.fill(0);const len=body.length;for(let i=0;i<len;i++)occ[ci(b,body[i])]=len-i;return occ}
+
+/* ---------- time-aware BFS ---------- */
+function bfsTime(st,body,isGoalCell,opts){
+  const b=st.board,n=b*b;ensureBuf(n);
+  const occ=fillOcc(b,body,buf.occ),dist=buf.dist,prev=buf.prev,pdir=buf.pdir;
+  const banReverse=!opts||opts.banReverse!==false;
+  const growth=(opts&&opts.growth)||0; // extra safety: pretend snake is longer
+  dist.fill(-1);
+  const start=ci(b,body[0]);dist[start]=0;prev[start]=-1;
+  const q=new Int32Array(n);let qh=0,qt=0;q[qt++]=start;let goal=-1;
+  while(qh<qt&&goal<0){
+    const c=q[qh++],t=dist[c]+1,cx=c%b,cy=(c-cx)/b;
+    for(let di=0;di<4;di++){
+      if(banReverse&&c===start&&opposite(ORDER[di],st.dir))continue;
+      const nx=cx+DX[di],ny=cy+DY[di];
+      if(nx<0||ny<0||nx>=b||ny>=b)continue;
+      const nc=ny*b+nx;
+      if(dist[nc]!==-1)continue;
+      if(occ[nc]>t-growth)continue;
+      dist[nc]=t;prev[nc]=c;pdir[nc]=di;q[qt++]=nc;
+      if(isGoalCell(nc)){goal=nc;break}
+    }
+  }
+  if(goal<0)return null;
+  const out=[];let c=goal;
+  while(c!==start){out.push(ORDER[pdir[c]]);c=prev[c]}
+  return out.reverse();
+}
+
+/* ---------- flood fill: free cells reachable from a head ---------- */
+function freeSpace(st,body){
+  const b=st.board,n=b*b;ensureBuf(n);
+  const occ=fillOcc(b,body,buf.occ),mark=buf.mark,stamp=++buf.stamp;
+  const start=ci(b,body[0]);mark[start]=stamp;
+  const q=new Int32Array(n);let qh=0,qt=0;q[qt++]=start;let count=0;
+  while(qh<qt){
+    const c=q[qh++];count++;const cx=c%b,cy=(c-cx)/b;
+    for(let di=0;di<4;di++){
+      const nx=cx+DX[di],ny=cy+DY[di];
+      if(nx<0||ny<0||nx>=b||ny>=b)continue;
+      const nc=ny*b+nx;
+      if(mark[nc]===stamp)continue;
+      if(occ[nc]>1)continue; // tail cell (vacate time 1) counts as free
+      mark[nc]=stamp;q[qt++]=nc;
+    }
+  }
+  return count;
+}
+
+/* ---------- can the head still chase its own tail? ---------- */
+function tailReachable(st,body){
+  if(body.length<3)return true;
+  const b=st.board,tailCell=ci(b,body[body.length-1]);
+  const sub={board:b,dir:st.dir,foods:st.foods};
+  return bfsTime(sub,body,c=>c===tailCell,{banReverse:false})!==null;
+}
+
+/* ---------- simulate a sequence of moves under real rules ---------- */
+function simulate(st,body,dirs){
+  const b=st.board;let snake=clone(body);const foods=st.foods.map(f=>({x:f.x,y:f.y}));
+  for(const d of dirs){
+    const h=snake[0],nx=h.x+DIRS[d].x,ny=h.y+DIRS[d].y;
+    if(nx<0||ny<0||nx>=b||ny>=b)return null;
+    const fi=foods.findIndex(f=>f.x===nx&&f.y===ny),eats=fi>=0;
+    const limit=eats?snake.length:snake.length-1;
+    for(let i=0;i<limit;i++)if(snake[i].x===nx&&snake[i].y===ny)return null;
+    snake.unshift({x:nx,y:ny});
+    if(eats)foods.splice(fi,1);else snake.pop();
+  }
+  return snake;
+}
+
+function legalMoves(st,body){
+  const b=st.board,sn=body||st.snake,h=sn[0],out=[];
+  const blocked=new Set(sn.slice(0,sn.length-1).map(key));
+  for(const d of ORDER){
+    if(opposite(d,st.dir))continue;
+    const p=add(h,d);
+    if(p.x<0||p.y<0||p.x>=b||p.y>=b)continue;
+    if(blocked.has(key(p)))continue;
+    out.push(d);
+  }
+  return out;
+}
+function bodyAfter(st,d,body){return simulate(st,body||st.snake,[d])}
+function nearestFoodDist(st,p){return st.foods.length?Math.min(...st.foods.map(f=>man(p,f))):0}
+function wallHug(st,p,body){ // how enclosed a cell is: compact play fragments space less
+  const b=st.board,occ=new Set(body.map(key));let c=0;
+  for(const d of ORDER){const n=add(p,d);if(n.x<0||n.y<0||n.x>=b||n.y>=b||occ.has(key(n)))c++}
+  return c;
+}
+
+/* ---------- classic searches (binary heap) ---------- */
+function heapPush(h,item){h.push(item);let i=h.length-1;while(i>0){const p=(i-1)>>1;if(h[p][0]<=h[i][0])break;[h[p],h[i]]=[h[i],h[p]];i=p}}
+function heapPop(h){const top=h[0],last=h.pop();if(h.length){h[0]=last;let i=0;for(;;){const l=2*i+1,r=l+1;let s=i;if(l<h.length&&h[l][0]<h[s][0])s=l;if(r<h.length&&h[r][0]<h[s][0])s=r;if(s===i)break;[h[s],h[i]]=[h[i],h[s]];i=s}}return top}
+
+function classicSearch(st,kind,goal,body){
+  const b=st.board,n=b*b,sn=body||st.snake;
+  if(!goal)return null;
+  const blocked=new Uint8Array(n);
+  for(let i=0;i<sn.length-1;i++)blocked[ci(b,sn[i])]=1;
+  const start=ci(b,sn[0]),goalCell=ci(b,goal);
+  const gscore=new Int32Array(n).fill(0x7fffffff),prev=new Int32Array(n).fill(-1),pdir=new Int8Array(n).fill(-1);
+  gscore[start]=0;
+  const gx=goal.x,gy=goal.y;
+  const h=c=>{const x=c%b,y=(c-(c%b))/b;return Math.abs(x-gx)+Math.abs(y-gy)};
+  const open=[];let stack=[start],order=0;
+  if(kind==="dfs"){
+    // depth-first, but expanding the neighbour closest to the goal first
+    const seen=new Uint8Array(n);seen[start]=1;
+    while(stack.length){
+      const c=stack.pop();
+      if(c===goalCell)break;
+      const cx=c%b,cy=(c-(c%b))/b,cand=[];
+      for(let di=0;di<4;di++){
+        if(c===start&&opposite(ORDER[di],st.dir))continue;
+        const nx=cx+DX[di],ny=cy+DY[di];
+        if(nx<0||ny<0||nx>=b||ny>=b)continue;
+        const nc=ny*b+nx;
+        if(blocked[nc]||seen[nc])continue;
+        cand.push([h(nc),nc,di]);
+      }
+      cand.sort((a,z)=>z[0]-a[0]);
+      for(const [,nc,di] of cand){seen[nc]=1;prev[nc]=c;pdir[nc]=di;stack.push(nc)}
+    }
+    if(prev[goalCell]===-1&&goalCell!==start)return null;
+  }else{
+    heapPush(open,[kind==="greedy"?h(start):h(start),order++,start]);
+    const closed=new Uint8Array(n);let found=false;
+    while(open.length){
+      const [,,c]=heapPop(open);
+      if(closed[c])continue;closed[c]=1;
+      if(c===goalCell){found=true;break}
+      const cx=c%b,cy=(c-(c%b))/b;
+      for(let di=0;di<4;di++){
+        if(c===start&&opposite(ORDER[di],st.dir))continue;
+        const nx=cx+DX[di],ny=cy+DY[di];
+        if(nx<0||ny<0||nx>=b||ny>=b)continue;
+        const nc=ny*b+nx;
+        if(blocked[nc])continue;
+        const ng=gscore[c]+1;
+        if(ng>=gscore[nc])continue;
+        gscore[nc]=ng;prev[nc]=c;pdir[nc]=di;
+        const f=kind==="greedy"?h(nc):kind==="dijkstra"?ng:ng+h(nc);
+        heapPush(open,[f,order++,nc]);
+      }
+    }
+    if(!found)return null;
+  }
+  const out=[];let c=goalCell;
+  while(c!==start){if(prev[c]===-1)return null;out.push(ORDER[pdir[c]]);c=prev[c]}
+  return out.reverse();
+}
+
+/* ---------- safety verdict for a resulting body ---------- */
+function survives(st,body,margin){
+  const space=freeSpace(st,body);
+  if(space<body.length+(margin||0))return false;
+  return tailReachable(st,body);
+}
+/* Roll the future forward: from a hypothetical body, chase the tail for a
+   number of moves. If that dry run survives, the position is genuinely safe
+   instead of only looking safe for one step. This is what stops the snake
+   from eating its way into a sealed pocket.                                */
+function escapable(st,body,steps){
+  const b=st.board;
+  let cur=body,dir=st.dir;
+  const sub={board:b,dir,foods:[],snake:cur};
+  for(let i=0;i<steps;i++){
+    sub.snake=cur;sub.dir=dir;
+    const tailCell=ci(b,cur[cur.length-1]);
+    let pick=null;
+    const tp=bfsTime(sub,cur,c=>c===tailCell);
+    if(tp&&tp.length)pick=tp[0];
+    if(!pick){
+      let bestV=-Infinity;
+      for(const d of legalMoves(sub,cur)){
+        const nb=simulate(sub,cur,[d]);
+        if(!nb)continue;
+        const v=freeSpace(sub,nb);
+        if(v>bestV){bestV=v;pick=d}
+      }
+    }
+    if(!pick)return false;
+    const nb=simulate(sub,cur,[pick]);
+    if(!nb)return false;
+    cur=nb;dir=pick;
+  }
+  return true;
+}
+
+/* ---------- food planning ---------- */
+function foodPaths(st,kind){
+  const out=[];
+  for(const f of st.foods){
+    const p=kind?classicSearch(st,kind,f):bfsTime(st,st.snake,c=>c===ci(st.board,f));
+    if(p&&p.length)out.push({food:f,path:p});
+  }
+  out.sort((a,b)=>a.path.length-b.path.length);
+  return out;
+}
+function safeFoodPath(st,kind){
+  for(const c of foodPaths(st,kind)){
+    const body=simulate(st,st.snake,c.path);
+    if(body&&survives(st,body,0))return c.path;
+  }
+  return null;
+}
+
+/* ---------- survival move: maximise room, stay compact ---------- */
+function survivalMove(st,opts){
+  const greedForFood=opts&&opts.food;
+  let best=null,bestScore=-Infinity;
+  for(const d of legalMoves(st)){
+    const body=bodyAfter(st,d);
+    if(!body)continue;
+    const space=freeSpace(st,body);
+    const tail=tailReachable(st,body)?1:0;
+    const head=body[0];
+    let v=space*100+tail*4000+wallHug(st,head,body)*12;
+    if(space<body.length)v-=6000;
+    if(greedForFood)v-=nearestFoodDist(st,head)*3;
+    else v-=man(head,body[body.length-1]);
+    if(v>bestScore){bestScore=v;best=d}
+  }
+  return best||legalMoves(st)[0]||null;
+}
+
+/* ---------- flood fill strategy (2-ply) ---------- */
+function floodMove(st){
+  let best=null,bestV=-Infinity;
+  for(const d of legalMoves(st)){
+    const body=bodyAfter(st,d);if(!body)continue;
+    const space=freeSpace(st,body);
+    let look=0;
+    const sub={board:st.board,dir:d,foods:st.foods,snake:body};
+    for(const d2 of legalMoves(sub,body)){
+      const b2=bodyAfter(sub,d2,body);if(!b2)continue;
+      look=Math.max(look,freeSpace(sub,b2));
+    }
+    const v=space*14+look*6-nearestFoodDist(st,body[0])*2+(tailReachable(st,body)?250:0);
+    if(v>bestV){bestV=v;best=d}
+  }
+  return best;
+}
+
+/* ---------- longest safe path: DFS toward the tail, budgeted ---------- */
+function longestMove(st){
+  const b=st.board,tail=st.snake[st.snake.length-1];
+  let bestDir=null,bestLen=-1,budget=4000;
+  for(const d of legalMoves(st)){
+    const body=bodyAfter(st,d);if(!body)continue;
+    if(!tailReachable(st,body))continue;
+    // greedily extend a route to the tail, preferring long detours
+    let len=0,cur=body,guard=0;
+    while(guard++<80&&budget-->0){
+      const sub={board:b,dir:d,foods:st.foods,snake:cur};
+      const moves=legalMoves(sub,cur).map(m=>{
+        const nb=bodyAfter(sub,m,cur);
+        if(!nb)return null;
+        return{m,nb,v:man(nb[0],tail)*2+wallHug(sub,nb[0],nb)};
+      }).filter(Boolean).sort((x,y)=>y.v-x.v);
+      const pick=moves.find(o=>tailReachable(sub,o.nb))||moves[0];
+      if(!pick)break;
+      cur=pick.nb;len++;
+    }
+    const score=len*10+freeSpace(st,body);
+    if(score>bestLen){bestLen=score;bestDir=d}
+  }
+  return bestDir||survivalMove(st);
+}
+
+/* ---------- wall following with loop breaking ---------- */
+function wallMove(st){
+  const w=st.wall;w.moves++;
+  const hk=key(st.snake[0]);
+  w.recent.push(hk);if(w.recent.length>40)w.recent.shift();
+  const repeats=w.recent.filter(k=>k===hk).length;
+  const looped=repeats>=3||(w.recent.length>=16&&new Set(w.recent.slice(-16)).size<=6);
+  if(looped||w.moves-w.lastFood>4){
+    const fp=safeFoodPath(st,"astar");
+    if(fp){w.lastFood=w.moves;st.path=fp;return fp[0]}
+  }
+  const order=st.dir==="up"?["right","up","left","down"]:st.dir==="right"?["down","right","up","left"]:st.dir==="down"?["left","down","right","up"]:["up","left","down","right"];
+  const legal=legalMoves(st);
+  for(const d of order){
+    if(!legal.includes(d))continue;
+    const body=bodyAfter(st,d);if(!body)continue;
+    if(looped&&w.recent.includes(key(body[0])))continue;
+    if(tailReachable(st,body)&&freeSpace(st,body)>=body.length)return d;
+  }
+  return survivalMove(st)||floodMove(st);
+}
+
+/* ---------- Hamiltonian cycle ---------- */
+const hCache=new Map();
+function hCycle(b){
+  if(hCache.has(b))return hCache.get(b);
+  const pts=[];
+  for(let x=0;x<b;x++)pts.push({x,y:0});
+  for(let y=1;y<b;y++){
+    if(y%2===1){for(let x=b-1;x>=1;x--)pts.push({x,y})}
+    else{for(let x=1;x<b;x++)pts.push({x,y})}
+  }
+  for(let y=b-1;y>=1;y--)pts.push({x:0,y});
+  const idx=new Int32Array(b*b);
+  pts.forEach((p,i)=>{idx[p.y*b+p.x]=i});
+  const data={pts,idx};hCache.set(b,data);return data;
+}
+const hIdx=(b,p)=>hCycle(b).idx[p.y*b+p.x];
+function dirTo(a,b){return ORDER.find(d=>eq(add(a,d),b))}
+function hamiltonMove(st){
+  const b=st.board,cyc=hCycle(b),h=st.snake[0],cur=hIdx(b,h);
+  const next=cyc.pts[(cur+1)%cyc.pts.length],nd=dirTo(h,next),legal=legalMoves(st);
+  if(nd&&legal.includes(nd))return nd;
+  return survivalMove(st);
+}
+/* Hamiltonian cycle WITH *very safe* shortcuts.
+   A shortcut is only taken when every one of these holds:
+     - it moves forward along the cycle and never passes the tail
+       (with a growing safety buffer, not a fixed 3 cells)
+     - no body segment sits in the stretch of cycle being skipped
+     - the apple is never overshot
+     - after the jump the board stays in one piece: the reachable
+       area still contains every empty cell it had before
+     - the tail is still reachable AND a long tail-chase dry run
+       survives (many moves, not one)
+   Anything less than certain means: just follow the cycle.        */
+/* tuning applies to the strategies the advanced panel describes */
+function stCfg(st){return(st&&(st.alg==="hybrid"||st.alg==="hamilton"))?advCfg():advCfg.standard}
+function hamiltonShortcut(st,aggressive){
+  const cfg=stCfg(st);
+  const b=st.board,N=b*b,sn=st.snake,len=sn.length;
+  const hi=hIdx(b,sn[0]),ti=hIdx(b,sn[len-1]);
+  const empty=N-len;
+  const distTail=(ti-hi+N)%N||N;
+  // safety buffer between the shortcut landing spot and the tail
+  const buffer=Math.max(4,Math.ceil(len*(cfg.on?0.25/Math.max(.25,cfg.riskW):0.25)));
+  const div=aggressive?(cfg.on?cfg.boldDiv:4):(cfg.on?cfg.timidDiv:8);
+  let maxJump=distTail-buffer;
+  if(empty<b*2)maxJump=0;                                  // crowded: pure cycle, no risks
+  else maxJump=Math.min(maxJump,Math.floor(empty/div));
+  // cycle indices occupied by the body, used to refuse jumps over the snake
+  const occupied=new Set(sn.map(p=>hIdx(b,p)));
+  let target=null,bestFood=Infinity;
+  for(const f of st.foods){const fd=(hIdx(b,f)-hi+N)%N;if(fd<bestFood){bestFood=fd;target=f}}
+  const distFood=target?bestFood:N;
+  const sc=st.debug?{maxJump,buffer,distTail,distFood,aggressive,div,tried:0,rej:{},moves:[],bestGain:0,result:null}:null;
+  const rej=(sc,why)=>{if(sc)sc.rej[why]=(sc.rej[why]||0)+1};
+  const note=(d,verdict,gain)=>{if(sc)sc.moves.push({dir:d,verdict,gain})};
+  let best=null,bestGain=0;
+  if(maxJump>=2)for(const d of legalMoves(st)){
+    const body=bodyAfter(st,d);if(!body){rej(sc,"crashes");note(d,"crashes",0);continue}
+    if(sc)sc.tried++;
+    const gain=(hIdx(b,body[0])-hi+N)%N;
+    if(gain<2){rej(sc,"no gain");note(d,"no gain",gain);continue}   // gain of 1 is just the cycle
+    if(gain>maxJump){rej(sc,"jump > maxJump "+maxJump);note(d,"too long",gain);continue}
+    if(gain>distFood){rej(sc,"would overshoot apple");note(d,"overshoots apple",gain);continue}
+    // nothing of the snake may lie in the skipped stretch
+    let blocked=false;
+    for(let k=1;k<=gain;k++)if(occupied.has((hi+k)%N)){blocked=true;break}
+    if(blocked){rej(sc,"jumps over own body");note(d,"jumps over body",gain);continue}
+    const space=freeSpace(st,body);
+    const roomNeeded=Math.max(body.length,Math.round(body.length*(cfg.on?2/Math.max(.5,cfg.riskW):2)));
+    if(space<roomNeeded){rej(sc,"too little room ("+space+"<"+roomNeeded+")");note(d,"room "+space,gain);continue}
+    if(space<N-body.length){rej(sc,"splits the board");note(d,"splits board",gain);continue}
+    if(!tailReachable(st,body)){rej(sc,"tail unreachable");note(d,"tail lost",gain);continue}
+    const dry=cfg.on?Math.max(5,Math.round(cfg.horizon*1.5)):Math.min(120,Math.max(30,body.length*2));
+    if(!escapable(st,body,dry)){rej(sc,"dry-run dies");note(d,"dry-run dies",gain);continue}
+    note(d,"OK +"+gain,gain);
+    if(gain>bestGain){bestGain=gain;best=d}
+  }
+  if(sc){sc.bestGain=bestGain;
+    if(best)sc.result="shortcut "+best+" (skips "+bestGain+" cycle cells)";
+    else if(maxJump<2)sc.result="no jump allowed ("+(empty<b*2?"board too crowded":"maxJump "+maxJump+") → follow cycle");
+    else sc.result="every shortcut rejected → follow cycle";
+    if(st.debug){
+      st.debug.shortcut=sc;
+      // visualise the stretch of cycle that the shortcut skips over
+      const cyc=hCycle(b).pts;
+      st.debug.viz=st.debug.viz||{};
+      st.debug.viz.cycleSkip=bestGain>1?Array.from({length:bestGain},(_,k)=>cyc[(hi+k+1)%N]):[];
+      st.debug.viz.cycleAhead=Array.from({length:Math.min(cfg.on?Math.max(6,maxJump+4):10,N-1)},(_,k)=>cyc[(hi+k+1)%N]);
+    }}
+  if(best)return best;
+  const follow=hamiltonMove(st);
+  if(follow){const body=bodyAfter(st,follow);if(body&&tailReachable(st,body))return follow}
+  return survivalMove(st);
+}
+
+/* ============================================================
+   HYBRID SMART AI
+   1. plan a time-aware route to the best apple
+   2. accept it only if, after eating, the snake can still reach
+      its tail AND keeps at least as much room as its own length
+   3. score candidates on room left over, not just path length
+   4. once the board gets crowded, switch to Hamiltonian cycle
+      with safe shortcuts (near-perfect completion rate)
+   5. if nothing is safe, chase the tail / maximise open space
+   ============================================================ */
+function hybridMove(st){
+  const cfg=advCfg();
+  const b=st.board,N=b*b,sn=st.snake,len=sn.length,fill=len/N;
+  st.path=[];
+  if(!st.hyb)st.hyb={lastEat:st.moves,cycle:false};
+  const hy=st.hyb;
+  if(hy.eaten!==st.foodsEaten){hy.eaten=st.foodsEaten;hy.lastEat=st.moves}
+  const starving=st.moves-hy.lastEat>N*cfg.patience;
+  const t0=(typeof performance!=="undefined"?performance.now():Date.now());
+  const dbg=st.debug={fill,len,moves:st.moves,lines:[],plans:[],cfg,viz:{rejected:[],scores:[],accepted:null,dryRun:[]},alg:"hybrid"};
+  dbg.lines.push("board "+Math.round(fill*100)+"% full · snake "+len+" · "+(st.moves-hy.lastEat)+" moves since last apple"+(starving?" (starving)":""));
+  if(cfg.on)dbg.lines.push("tuning: cycle@"+Math.round(cfg.cycleAt*100)+"% · margin "+Math.round(cfg.marginPct*100)+"% · horizon "+cfg.horizon+" · boldness "+adv.bold+"/16 · risk "+adv.risk+"/100 · patience "+Math.round(cfg.patience*100)+"% · width "+cfg.width+" · "+(cfg.depth>1?"deep":"standard")+" depth");
+
+  /* --- endgame: once the board is crowded the Hamiltonian cycle with
+     safe shortcuts is strictly better than greedy planning, because it
+     can never seal itself in. Latch it on so we don't flip-flop.      */
+  if(fill>=cfg.cycleAt||starving)hy.cycle=true;
+  if(hy.cycle&&fill<cfg.exitAt&&!starving)hy.cycle=false;   // room opened up again (multi-apple boards)
+  if(hy.cycle){
+    dbg.mode="Hamiltonian cycle";
+    dbg.lines.push("mode: Hamiltonian cycle ("+(fill>=cfg.cycleAt?"board ≥"+Math.round(cfg.cycleAt*100)+"% full":"starving")+", "+(fill<0.6?"aggressive":"conservative")+")");
+    const cm=hamiltonShortcut(st,fill<0.6);
+    if(cm){
+      const body=bodyAfter(st,cm);
+      if(body&&(tailReachable(st,body)||freeSpace(st,body)>=body.length)){hy.lastEat=starving?st.moves:hy.lastEat;dbg.lines.push("decision: cycle move "+cm+(dbg.shortcut&&dbg.shortcut.bestGain>1?" — shortcut skipping "+dbg.shortcut.bestGain+" cells":" — following the cycle"));dbg.decision="cycle "+cm;dbg.ms=(typeof performance!=="undefined"?performance.now():Date.now())-t0;return cm}
+      dbg.lines.push("cycle move failed its safety recheck → falling back to planning");
+    }
+  }else{dbg.mode="apple planning";dbg.lines.push("mode: greedy apple planning (plenty of room)")}
+
+  // --- 1+2+3: safest profitable apple route -------------------
+  const cands=[];
+  const kinds=cfg.depth>1?[null,"astar","dijkstra","greedy"]:[null,"astar"];
+  for(const kind of kinds){
+    for(const c of foodPaths(st,kind)){
+      if(cands.some(o=>o.path.length===c.path.length&&o.path[0]===c.path[0]&&eq(o.food,c.food)))continue;
+      c.kind=kind||"bfs-time";
+      cands.push(c);
+    }
+  }
+  dbg.lines.push("candidate apple routes: "+cands.length+(cfg.on?" (examining up to "+cfg.width+" per pass)":""));
+  // room the snake insists on keeping after a meal; grows as the board fills
+  const plan=(margin,checkFuture)=>{
+    let bestPlan=null,bestScore=-Infinity;
+    const rec={margin,checkFuture,tried:0,rej:{},best:null,rows:[]};
+    const drop=(c,why)=>{
+      rec.rej[why]=(rec.rej[why]||0)+1;
+      rec.rows.push({food:c.food,kind:c.kind,steps:c.path.length,verdict:why,score:null});
+      dbg.viz.rejected.push({path:c.path,why});
+    };
+    for(const c of cands.slice(0,cfg.width)){
+      rec.tried++;
+      const body=simulate(st,st.snake,c.path);
+      if(!body){drop(c,"crashes");continue}
+      const space=freeSpace(st,body);
+      if(space<body.length+margin){drop(c,"room "+space+" < "+(body.length+margin));continue}
+      if(!tailReachable(st,body)){drop(c,"tail unreachable");continue}
+      // hard rule: from the post-meal position the tail must still be chaseable
+      const after={board:b,dir:c.path[c.path.length-1],foods:st.foods.filter(f=>!eq(f,c.food)),snake:body,wall:st.wall,alg:st.alg};
+      if(!tailReachable(after,body)){drop(c,"tail lost after meal");continue}
+      // dry-run the future: eating is only allowed if the snake can still
+      // wriggle for a long stretch afterwards
+      if(checkFuture&&fill>0.12&&cfg.horizon>0){
+        const horizon=Math.min(cfg.horizon,Math.max(12,Math.floor(body.length*0.7)));
+        if(!escapable(after,body,horizon)){drop(c,"dry-run dies ("+horizon+" moves)");continue}
+      }
+      const freeCells=Math.max(1,N-body.length);
+      const roomRatio=space/freeCells;
+      // risk appetite: <1 values leftover room, >1 values getting there fast
+      let score=space*4/Math.max(.3,cfg.riskW)-c.path.length*4*cfg.riskW+roomRatio*900/Math.max(.3,cfg.riskW);
+      if(space>=freeCells)score+=500;                       // keeps the board in one piece
+      // prefer meals that leave the head near the tail: compact snake, fewer dead pockets
+      score-=man(body[0],body[body.length-1])*2;
+      const chainable=after.foods.length&&bfsTime(after,body,cell=>after.foods.some(f=>ci(b,f)===cell));
+      if(cfg.chain&&chainable)score+=150*cfg.chain;
+      if(cfg.depth>1&&!escapable(after,body,Math.min(25,Math.max(8,body.length))))score-=400;
+      rec.rows.push({food:c.food,kind:c.kind,steps:c.path.length,verdict:"accepted",score:Math.round(score),room:space,chain:!!chainable});
+      if(score>bestScore){bestScore=score;bestPlan=c.path}
+    }
+    rec.best=bestScore===-Infinity?null:Math.round(bestScore);
+    dbg.plans.push(rec);
+    return bestPlan;
+  };
+  let bestPlan=plan(fill<0.12?0:Math.ceil(len*cfg.marginPct),true);
+  if(!bestPlan)bestPlan=plan(0,true);
+  if(!bestPlan)bestPlan=plan(0,false);
+  if(bestPlan){
+    dbg.lines.push("decision: apple route, "+bestPlan.length+" steps, first move "+bestPlan[0]);
+    dbg.decision="apple route ("+bestPlan.length+" steps)";
+    dbg.viz.accepted=bestPlan;
+    dbg.viz.rejected=dbg.viz.rejected.filter(r=>r.path!==bestPlan);
+    dbg.ms=(typeof performance!=="undefined"?performance.now():Date.now())-t0;
+    st.path=bestPlan;return bestPlan[0]}
+  dbg.lines.push("no apple route survived all three safety passes");
+  const done=(move,label)=>{dbg.decision=label;dbg.ms=(typeof performance!=="undefined"?performance.now():Date.now())-t0;return move};
+
+  // --- 4: no safe apple -> stall productively -----------------
+  const tailCell=ci(b,sn[len-1]);
+  const tailPath=bfsTime(st,sn,c=>c===tailCell);
+  if(tailPath&&tailPath.length){
+    const body=simulate(st,st.snake,[tailPath[0]]);
+    if(body&&freeSpace(st,body)>=body.length-1&&tailReachable(st,body)){dbg.lines.push("decision: stalling — chasing own tail ("+tailPath.length+" steps)");st.path=tailPath;dbg.viz.accepted=tailPath;return done(tailPath[0],"tail chase")}
+  }
+  // --- 5: cycle rescue before any blind move ------------------
+  const rescue=hamiltonShortcut(st,false);
+  if(rescue){
+    const body=bodyAfter(st,rescue);
+    if(body&&tailReachable(st,body)){hy.cycle=true;dbg.lines.push("decision: cycle rescue "+rescue);return done(rescue,"cycle rescue")}
+  }
+  // --- 6: last resort, keep the most room and stay compact ----
+  let fallback=null,fbScore=-Infinity;
+  for(const d of legalMoves(st)){
+    const body=bodyAfter(st,d);
+    if(!body)continue;
+    const space=freeSpace(st,body),tailOk=tailReachable(st,body),dry=escapable(st,body,Math.min(cfg.on?Math.max(10,cfg.horizon):30,Math.max(10,len)));
+    const v=space*10+(tailOk?5000:0)+(dry?9000:0)+wallHug(st,body[0],body)*12;
+    dbg.viz.scores.push({dir:d,cell:add(sn[0],d),score:Math.round(v),room:space,tail:tailOk,dry});
+    if(v>fbScore){fbScore=v;fallback=d}
+  }
+  dbg.lines.push("decision: LAST RESORT — maximising open room ("+(fallback||"none")+")");
+  return done(fallback||survivalMove(st)||floodMove(st)||longestMove(st),"last resort");
+}
+
+/* ---------- dispatcher ---------- */
+function chooseMove(st){
+  const alg=st.alg;
+  if(alg==="hybrid")return hybridMove(st);
+  st.debug={lines:["algorithm: "+(ALGS[alg]||alg)]};
+  const dbg=st.debug;
+  if(alg==="flood"){st.path=[];const m=floodMove(st);dbg.lines.push("decision: flood fill move "+m+" (most open room)");return m}
+  if(alg==="longest"){st.path=[];const m=longestMove(st);dbg.lines.push("decision: longest safe path move "+m);return m}
+  if(alg==="wall"){st.path=[];const m=wallMove(st);dbg.lines.push("decision: wall-follow move "+m);return m}
+  if(alg==="hamilton"){st.path=[];const len=st.snake.length,N=st.board*st.board;
+    dbg.lines.push("board "+Math.round(len/N*100)+"% full · "+(len/N<0.5?"aggressive":"conservative")+" shortcuts");
+    const m=hamiltonShortcut(st,len/N<0.5)||hamiltonMove(st);
+    dbg.lines.push("decision: "+m+(dbg.shortcut&&dbg.shortcut.bestGain>1?" — shortcut skipping "+dbg.shortcut.bestGain+" cells":" — following the cycle"));
+    return m}
+  // pure search algorithms: take their own route, but refuse suicide
+  let p=safeFoodPath(st,alg);
+  if(p)dbg.lines.push("safe route to apple found ("+p.length+" steps)");
+  if(!p){
+    const raw=foodPaths(st,alg)[0];
+    if(raw){
+      const body=simulate(st,st.snake,raw.path);
+      if(body&&tailReachable(st,body)){p=raw.path;dbg.lines.push("raw route accepted after tail check ("+p.length+" steps)")}
+      else dbg.lines.push("raw route rejected: tail unreachable after eating");
+    }else dbg.lines.push("no route to any apple exists");
+  }
+  if(p){dbg.lines.push("decision: follow route, first move "+p[0]);st.path=p;return p[0]}
+  const tailCell=ci(st.board,st.snake[st.snake.length-1]);
+  const tp=bfsTime(st,st.snake,c=>c===tailCell);
+  if(tp&&tp.length){dbg.lines.push("decision: stalling — chasing own tail ("+tp.length+" steps)");st.path=tp;return tp[0]}
+  dbg.lines.push("decision: survival move (no plan available)");
+  st.path=[];
+  return survivalMove(st)||floodMove(st);
+}
+
+/* ---------- escape analysis: what the AI falls back on ----------
+   For the move it just committed to, work out the survival route it
+   is relying on (tail chase), the alternative safe first moves, and
+   the open region it would still own. Purely for visualisation.   */
+function reachableCells(st,body){
+  const b=st.board,n=b*b;ensureBuf(n);
+  const occ=fillOcc(b,body,buf.occ),mark=buf.mark,stamp=++buf.stamp;
+  const start=ci(b,body[0]);mark[start]=stamp;
+  const q=new Int32Array(n);let qh=0,qt=0;q[qt++]=start;const out=[];
+  while(qh<qt){
+    const c=q[qh++];out.push(c);const cx=c%b,cy=(c-cx)/b;
+    for(let di=0;di<4;di++){
+      const nx=cx+DX[di],ny=cy+DY[di];
+      if(nx<0||ny<0||nx>=b||ny>=b)continue;
+      const nc=ny*b+nx;
+      if(mark[nc]===stamp||occ[nc]>1)continue;
+      mark[nc]=stamp;q[qt++]=nc;
+    }
+  }
+  return out;
+}
+function escapeInfo(st,chosen){
+  if(!chosen)return null;
+  const b=st.board;
+  const body=bodyAfter(st,chosen);
+  if(!body)return null;
+  const sub={board:b,dir:chosen,foods:st.foods,snake:body,wall:st.wall,alg:st.alg};
+  const tailCell=ci(b,body[body.length-1]);
+  const tail=bfsTime(sub,body,c=>c===tailCell,{banReverse:false});
+  const cells=reachableCells(sub,body);
+  // other first moves that would also stay alive: the spare exits
+  const alts=[];
+  for(const d of legalMoves(st)){
+    if(d===chosen)continue;
+    const nb=bodyAfter(st,d);
+    if(nb&&tailReachable(st,nb)&&freeSpace(st,nb)>=nb.length)alts.push(add(st.snake[0],d));
+  }
+  const room=freeSpace(st,body);
+  return{from:body[0],first:chosen,path:tail||[],cells,alts,room,need:body.length,safe:!!tail&&cells.length>=body.length};
+}
+/* Per-move survival audit for the on-board "AI thinking" overlay: every legal
+   first move gets room / tail / dry-run numbers, whether the AI used them or not. */
+function moveAudit(st,chosen){
+  const cfg=stCfg(st),out=[];
+  for(const d of legalMoves(st)){
+    const body=bodyAfter(st,d);
+    if(!body){out.push({dir:d,cell:add(st.snake[0],d),fatal:true,score:null});continue}
+    const room=freeSpace(st,body),tail=tailReachable(st,body);
+    const dry=escapable(st,body,Math.min(cfg.on?Math.max(8,Math.round(cfg.horizon/2)):20,Math.max(8,body.length)));
+    out.push({dir:d,cell:add(st.snake[0],d),fatal:false,room,need:body.length,tail,dry,chosen:d===chosen,
+      score:Math.round(room*10+(tail?5000:0)+(dry?9000:0)+wallHug(st,body[0],body)*12)});
+  }
+  return out;
+}
+/* Dry-run trail: where the tail chase would actually take the snake next. */
+function dryRunTrail(st,chosen,steps){
+  const b=st.board;let cur=bodyAfter(st,chosen);if(!cur)return[];
+  let dir=chosen;const trail=[];
+  for(let i=0;i<steps;i++){
+    const sub={board:b,dir,foods:[],snake:cur,alg:st.alg};
+    const tailCell=ci(b,cur[cur.length-1]);
+    const tp=bfsTime(sub,cur,c=>c===tailCell);
+    const pick=tp&&tp.length?tp[0]:(legalMoves(sub,cur)[0]||null);
+    if(!pick)break;
+    const nb=simulate(sub,cur,[pick]);
+    if(!nb)break;
+    trail.push({x:nb[0].x,y:nb[0].y});cur=nb;dir=pick;
+  }
+  return trail;
+}
+
+
+/* ============================================================
+   Game state
+   ============================================================ */
+let high=Number(localStorage.getItem("snake-ai-high")||0);
+let running=false,paused=false,gameOver=false,ai=false,last=0,acc=0,tickMs=125;
+let competition=false,compGames=[],compWinner="";
+let game=null;
+
+function appleCount(){return Number(ui.appleCount.value)||1}
+function newState(board,alg){
+  const m=Math.floor(board/2);
+  return{board,alg,name:ALGS[alg]||alg,snake:[{x:m+1,y:m},{x:m,y:m},{x:m-1,y:m}],foods:[],food:null,dir:"right",queued:"right",score:0,foodsEaten:0,moves:0,ticks:0,alive:true,won:false,status:"alive",path:[],wall:{recent:[],moves:0,escape:0,lastFood:0}};
+}
+function spawnFood(st,i){
+  const b=st.board,occupied=new Set(st.snake.map(key)),taken=new Set(st.foods.map(key));
+  ensureBuf(b*b);
+  const occ=fillOcc(b,st.snake,buf.occ),mark=buf.mark,stamp=++buf.stamp;
+  const q=[ci(b,st.snake[0])];mark[q[0]]=stamp;
+  for(let qi=0;qi<q.length;qi++){
+    const c=q[qi],cx=c%b,cy=(c-(c%b))/b;
+    for(let di=0;di<4;di++){
+      const nx=cx+DX[di],ny=cy+DY[di];
+      if(nx<0||ny<0||nx>=b||ny>=b)continue;
+      const nc=ny*b+nx;
+      if(mark[nc]===stamp||occ[nc]>1)continue;
+      mark[nc]=stamp;q.push(nc);
+    }
+  }
+  const free=[],reach=[];
+  for(let y=0;y<b;y++)for(let x=0;x<b;x++){
+    const p={x,y},k=key(p);
+    if(occupied.has(k)||taken.has(k))continue;
+    free.push(p);if(mark[y*b+x]===stamp)reach.push(p);
+  }
+  const pool=reach.length?reach:free;
+  if(!pool.length){st.foods.splice(i,1);if(st.snake.length>=b*b||!st.foods.length){st.alive=false;st.won=true;st.status="won"}return}
+  st.foods[i]=pool[Math.floor(Math.random()*pool.length)];
+}
+function ensureApples(st){
+  const target=Math.min(appleCount(),Math.max(0,st.board*st.board-st.snake.length));
+  while(st.foods.length>target)st.foods.pop();
+  while(st.foods.length<target)spawnFood(st,st.foods.length);
+  st.food=st.foods[0]||null;
+}
+function reset(){
+  competition=false;
+  game=newState(Number(ui.size.value),ui.algorithm.value);
+  ensureApples(game);
+  running=true;paused=false;gameOver=false;
+  hideOverlay();updateUi();
+}
+function win(){running=false;gameOver=true;showOverlay("Board cleared","The snake filled the board. Restart for a new run.","Restart")}
+function showOverlay(t,m,b){ui.overlayTitle.textContent=t;ui.overlayText.textContent=m;ui.overlayButton.textContent=b;ui.overlay.classList.add("show")}
+function hideOverlay(){ui.overlay.classList.remove("show")}
+function speedFps(){return Math.min(240,Math.round((Number(ui.speed.value)+Math.floor((game?game.score:0)/5))*Number(ui.boost.value)))}
+function updateUi(){
+  const score=game?game.score:0;
+  high=Math.max(high,score);localStorage.setItem("snake-ai-high",String(high));
+  ui.score.textContent=score;ui.high.textContent=high;ui.length.textContent=game?game.snake.length:3;
+  ui.speedOut.textContent=(competition?Number(ui.competitionSpeed.value):speedFps())+" FPS";
+  ui.appleCountOut.textContent=appleCount();
+  ui.modeText.textContent=competition?"Competition":ai?"AI":"Human";
+  ui.aiState.textContent=competition?"Parallel":ai?"On":"Off";
+  ui.algText.textContent=competition?"All algorithms":ALGS[ui.algorithm.value];
+  ui.humanBtn.classList.toggle("on",!ai&&!competition);
+  ui.aiBtn.classList.toggle("on",ai&&!competition);
+  ui.competitionBtn.classList.toggle("primary",competition);
+  ui.competitionBtn.textContent=competition?"Exit Competition Mode":"Competition Mode";
+  ui.competitionPanel.classList.toggle("show",competition);
+  ui.competitionSpeedWrap.style.display=competition?"grid":"none";
+  ui.pause.textContent=paused?"Resume":"Pause";
+  updateDebug();
+}
+/* ---------- AI decision log panel ---------- */
+function fmtRej(rej){const e=Object.entries(rej||{});return e.length?e.map(([k,v])=>k+(v>1?" ×"+v:"")).join(", "):"-"}
+let dbgText="Enable AI mode and start a game to see the AI's reasoning.";
+function buildDebugText(d,level){
+  const out=[];
+  if(d.lines)out.push(...d.lines);
+  if(d.shortcut){
+    const s=d.shortcut;
+    out.push("shortcut scan: maxJump "+s.maxJump+" · tail buffer "+s.buffer+" · divisor "+s.div+" · tail "+s.distTail+" cells away · apple "+(s.distFood>=game.board*game.board?"none":s.distFood+" cells ahead"));
+    out.push("  tried "+s.tried+" moves · rejected: "+fmtRej(s.rej));
+    if(level>=2&&s.moves&&s.moves.length)for(const m of s.moves)out.push("    "+m.dir.padEnd(6)+" gain "+String(m.gain).padStart(3)+" → "+m.verdict);
+    out.push("  → "+s.result);
+  }
+  if(d.plans)for(const p of d.plans){
+    out.push("plan pass (margin "+p.margin+(p.checkFuture?", future check":"")+"): "+p.tried+" routes tried · rejected: "+fmtRej(p.rej)+(p.best!=null?" · best score "+p.best:" · none passed"));
+    if(level>=2&&p.rows)for(const r of p.rows)
+      out.push("    apple ("+r.food.x+","+r.food.y+") via "+r.kind+" · "+r.steps+" steps → "+(r.verdict==="accepted"?"accepted · score "+r.score+" · room "+r.room+(r.chain?" · chains to next apple":""):"rejected: "+r.verdict));
+  }
+  if(level>=2&&d.audit&&d.audit.length){
+    out.push("first-move audit:");
+    for(const a of d.audit)out.push("    "+(a.chosen?"▶ ":"  ")+a.dir.padEnd(6)+(a.fatal?"fatal (wall/body)":"room "+a.room+"/"+a.need+" · tail "+(a.tail?"reachable":"LOST")+" · dry-run "+(a.dry?"survives":"DIES")+" · score "+a.score));
+  }
+  if(d.escape){
+    const e=d.escape;
+    out.push("escape: "+(e.safe?"SAFE":"RISKY")+" · survival route "+e.path.length+" steps · "+e.cells.length+" open cells (needs "+e.need+") · "+e.alts.length+" spare moves");
+  }
+  if(level>=3){
+    out.push("timing: "+(d.ms!=null?d.ms.toFixed(2)+" ms":"n/a")+" · move #"+(d.moves!=null?d.moves:"?")+" · decision: "+(d.decision||"-"));
+    if(d.cfg)out.push("config: "+JSON.stringify(d.cfg));
+    if(d.viz)out.push("overlay: "+(d.viz.rejected?d.viz.rejected.length:0)+" rejected routes drawn · "+(d.viz.cycleSkip?d.viz.cycleSkip.length:0)+" skipped cycle cells · "+(d.viz.dryRun?d.viz.dryRun.length:0)+" dry-run cells");
+  }
+  return out.join("\n");
+}
+function updateDebug(){
+  const show=ai&&!competition;
+  ui.debugPanel.style.display=show?"grid":"none";
+  ui.advPanel.style.display=show&&(ui.algorithm.value==="hybrid"||ui.algorithm.value==="hamilton")?"grid":"none";
+  if(!show)return;
+  const d=game&&game.debug;
+  if(!d){ui.debugOut.textContent=dbgText;return}
+  ui.dbgMode.textContent=d.mode||(d.alg==="hybrid"?"hybrid":ALGS[ui.algorithm.value]||"-");
+  ui.dbgTime.textContent=d.ms!=null?d.ms.toFixed(1)+" ms":"-";
+  ui.dbgSafety.textContent=d.escape?(d.escape.safe?"safe":"risky"):"-";
+  if(ui.dbgFreeze.value==="1")return;
+  dbgText=buildDebugText(d,Number(ui.dbgLevel.value));
+  ui.debugOut.textContent=dbgText;
+}
+function advance(st,chosen){
+  if(chosen)st.dir=chosen;
+  const b=st.board,h=st.snake[0],next={x:h.x+DIRS[st.dir].x,y:h.y+DIRS[st.dir].y};
+  const fi=st.foods.findIndex(f=>eq(f,next)),eats=fi>=0;
+  const limit=eats?st.snake.length:st.snake.length-1;
+  st.moves++;st.ticks++;
+  if(next.x<0||next.y<0||next.x>=b||next.y>=b){st.alive=false;st.status="dead";return false}
+  for(let i=0;i<limit;i++)if(eq(st.snake[i],next)){st.alive=false;st.status="dead";return false}
+  st.snake.unshift(next);
+  if(eats){st.score++;st.foodsEaten++;st.wall.lastFood=st.wall.moves;spawnFood(st,fi);ensureApples(st)}
+  else st.snake.pop();
+  if(st.snake.length>=b*b){st.alive=false;st.won=true;st.status="won"}
+  return true;
+}
+function step(){
+  if(competition){competitionStep();return}
+  if(!running||paused||gameOver||!game)return;
+  game.alg=ui.algorithm.value;
+  if(ai){
+    const chosen=chooseMove(game);
+    if(chosen)game.queued=chosen;
+    const pm=ui.pathToggle.value;
+    game.escape=(pm==="2"||pm==="3")?escapeInfo(game,chosen):null;
+    if(pm==="3"&&chosen){
+      const audit=moveAudit(game,chosen);
+      const dry=dryRunTrail(game,chosen,Math.min(40,Math.max(10,game.snake.length)));
+      game.think={audit,dry};
+      if(game.debug){game.debug.audit=audit;game.debug.viz=game.debug.viz||{};game.debug.viz.dryRun=dry;game.debug.viz.scores=audit}
+    }else game.think=null;
+  }else game.escape=null;
+  const ok=advance(game,game.queued);
+  game.queued=game.dir;
+  if(!ok){running=false;gameOver=true;showOverlay("Game over","Score "+game.score+". Restart to try again.","Restart");updateUi();return}
+  if(game.won){win();updateUi();return}
+  ensureApples(game);
+  tickMs=1000/speedFps();
+  updateUi();
+}
+function setDir(d){if(competition||ai||!running||paused||!game)return;if(!opposite(d,game.dir))game.queued=d}
+
+/* ============================================================
+   Competition
+   ============================================================ */
+const COMP_ALGS=["bfs","dfs","astar","dijkstra","greedy","hamilton","wall","flood","longest","hybrid"];
+function startCompetition(){
+  competition=true;running=true;paused=false;gameOver=false;compWinner="";
+  const b=Number(ui.size.value);
+  compGames=COMP_ALGS.map(a=>{const g=newState(b,a);ensureApples(g);return g});
+  hideOverlay();renderCompetition();updateUi();
+}
+function stopCompetition(){competition=false;compGames=[];compWinner="";updateUi();draw()}
+function competitionStep(){
+  if(!running||paused)return;
+  let live=0;
+  for(const g of compGames){
+    if(!g.alive)continue;live++;
+    const chosen=chooseMove(g);
+    advance(g,chosen);
+    if(g.alive)ensureApples(g);
+  }
+  if(!live&&!compWinner){
+    const winner=rankedGames()[0];compWinner=winner?winner.name:"-";
+    showOverlay("Competition complete","Winner: "+compWinner+". Restart the competition for another run.","Restart Competition");
+  }
+  renderCompetition();updateUi();
+}
+function rankedGames(){return [...compGames].sort((a,b)=>b.score-a.score||Number(b.alive)-Number(a.alive)||b.snake.length-a.snake.length||b.moves-a.moves)}
+function renderCompetition(){
+  const ranked=rankedGames(),best=ranked[0];
+  ui.competitionBest.textContent=best?best.name+" ("+best.score+")":"-";
+  ui.competitionWinner.textContent=compWinner||"-";
+  ui.leaderboard.innerHTML='<div class="row head"><span>#</span><span>Algorithm</span><span>Score</span><span>Len</span><span>Time</span><span>Food</span><span>Status</span><span>Moves</span><span>Eff</span></div>'+
+    ranked.map((g,i)=>'<div class="row '+(g.alive?"":"dead")+'"><b>'+(i+1)+'</b><span>'+g.name+'</span><span>'+g.score+'</span><span>'+g.snake.length+'</span><span>'+Math.floor(g.ticks/Number(ui.competitionSpeed.value))+'s</span><span>'+g.foodsEaten+'</span><span>'+(g.alive?"alive":g.status)+'</span><span>'+g.moves+'</span><span>'+(g.moves?((g.foodsEaten/g.moves)*100).toFixed(1):"0.0")+'%</span></div>').join("");
+}
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+function draw(){
+  if(competition&&compGames.length){const g=rankedGames()[0];drawState(g.board,g.snake,g.foods,g.dir,g.path,g.alive);return}
+  if(!game)return;
+  const mode=ui.pathToggle.value;
+  const think=(ai&&mode==="3")?{viz:(game.debug&&game.debug.viz)||null,audit:game.think&&game.think.audit,dry:game.think&&game.think.dry}:null;
+  drawState(game.board,game.snake,game.foods,game.dir,ai&&mode!=="0"?game.path:[],true,ai&&(mode==="2"||mode==="3")?game.escape:null,think);
+}
+function drawThinking(bd,cell,body,think){
+  const viz=think.viz||{};
+  // rejected apple routes (red dotted)
+  ctx.save();
+  ctx.setLineDash([cell*.22,cell*.22]);
+  ctx.strokeStyle="rgba(251,113,133,.65)";ctx.lineWidth=Math.max(1,cell*.1);ctx.lineJoin="round";
+  for(const r of (viz.rejected||[]).slice(0,6)){
+    if(!r.path||!r.path.length)continue;
+    let p={...body[0]};
+    ctx.beginPath();ctx.moveTo((p.x+.5)*cell,(p.y+.5)*cell);
+    for(const d of r.path){p=add(p,d);ctx.lineTo((p.x+.5)*cell,(p.y+.5)*cell)}
+    ctx.stroke();
+  }
+  ctx.restore();
+  // Hamiltonian stretch the shortcut skips (purple)
+  if(viz.cycleSkip&&viz.cycleSkip.length){
+    ctx.fillStyle="rgba(167,139,250,.28)";
+    for(const c of viz.cycleSkip)ctx.fillRect(c.x*cell+cell*.3,c.y*cell+cell*.3,cell*.4,cell*.4);
+  }
+  // survival dry-run trail (grey)
+  const dry=think.dry||viz.dryRun||[];
+  if(dry.length){
+    ctx.save();
+    ctx.strokeStyle="rgba(148,163,184,.6)";ctx.lineWidth=Math.max(1,cell*.08);ctx.lineJoin="round";
+    ctx.beginPath();ctx.moveTo((body[0].x+.5)*cell,(body[0].y+.5)*cell);
+    for(const p of dry)ctx.lineTo((p.x+.5)*cell,(p.y+.5)*cell);
+    ctx.stroke();ctx.restore();
+  }
+  // per-move score labels
+  if(think.audit&&think.audit.length&&cell>=16){
+    ctx.save();
+    ctx.font=Math.max(9,Math.round(cell*.28))+"px ui-monospace,Menlo,Consolas,monospace";
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    for(const a of think.audit){
+      const cx=(a.cell.x+.5)*cell,cy=(a.cell.y+.5)*cell;
+      if(a.cell.x<0||a.cell.y<0||a.cell.x>=bd||a.cell.y>=bd)continue;
+      ctx.fillStyle=a.fatal?"rgba(251,113,133,.9)":a.chosen?"rgba(45,212,191,.95)":"rgba(234,241,248,.7)";
+      ctx.fillText(a.fatal?"✕":String(a.score),cx,cy);
+      if(a.chosen){ctx.strokeStyle="rgba(45,212,191,.8)";ctx.lineWidth=Math.max(1,cell*.06);
+        ctx.beginPath();ctx.roundRect(a.cell.x*cell+cell*.1,a.cell.y*cell+cell*.1,cell*.8,cell*.8,cell*.2);ctx.stroke()}
+    }
+    ctx.restore();
+  }
+}
+function drawState(bd,body,fd,direction,showPath,alive,escape,think){
+  const w=canvas.width,cell=w/bd,drawFoods=Array.isArray(fd)?fd:(fd?[fd]:[]);
+  ctx.clearRect(0,0,w,w);ctx.fillStyle="#0b1218";ctx.fillRect(0,0,w,w);
+  ctx.strokeStyle="#182431";ctx.lineWidth=1;
+  for(let i=0;i<=bd;i++){const a=Math.round(i*cell)+.5;ctx.beginPath();ctx.moveTo(a,0);ctx.lineTo(a,w);ctx.moveTo(0,a);ctx.lineTo(w,a);ctx.stroke()}
+  if(escape){
+    // open room the snake would still own after this move
+    ctx.fillStyle=escape.safe?"rgba(45,212,191,.07)":"rgba(251,113,133,.10)";
+    for(const c of escape.cells){const x=c%bd;ctx.fillRect(x*cell,((c-x)/bd)*cell,cell,cell)}
+    // the survival route it is holding in reserve (tail chase)
+    if(escape.path.length){
+      let p={...escape.from};
+      ctx.fillStyle="rgba(245,158,11,.30)";
+      for(const d of escape.path){p=add(p,d);roundCell(p,cell,.42)}
+    }
+    // spare exits: other first moves that would also stay safe
+    ctx.strokeStyle="rgba(125,211,252,.55)";ctx.lineWidth=Math.max(1,cell*.07);
+    for(const p of escape.alts){ctx.beginPath();ctx.roundRect(p.x*cell+cell*.2,p.y*cell+cell*.2,cell*.6,cell*.6,cell*.2);ctx.stroke()}
+    ctx.lineWidth=1;
+  }
+  if(showPath&&showPath.length){let p={...body[0]};ctx.fillStyle="rgba(96,165,250,.28)";for(const d of showPath){p=add(p,d);roundCell(p,cell,.28)}}
+  for(const f of drawFoods){const g=ctx.createRadialGradient((f.x+.5)*cell,(f.y+.5)*cell,cell*.1,(f.x+.5)*cell,(f.y+.5)*cell,cell*.55);g.addColorStop(0,"#fde68a");g.addColorStop(.6,"#f97316");g.addColorStop(1,"#fb7185");ctx.fillStyle=g;roundCell(f,cell,.32)}
+  body.forEach((p,i)=>{
+    ctx.fillStyle=!alive?"#64748b":i===0?"#2dd4bf":`hsl(${184-i*.8} 68% ${Math.max(38,58-i*.45)}%)`;
+    roundCell(p,cell,i===0?.22:.18);
+    if(i===0){ctx.fillStyle="#05201d";const ex=(p.x+.36+(DIRS[direction].x*.12))*cell,ey=(p.y+.36+(DIRS[direction].y*.12))*cell;ctx.beginPath();ctx.arc(ex,ey,cell*.055,0,Math.PI*2);ctx.arc(ex+cell*.28*Math.abs(DIRS[direction].y),ey+cell*.28*Math.abs(DIRS[direction].x),cell*.055,0,Math.PI*2);ctx.fill()}
+  });
+  if(think)drawThinking(bd,cell,body,think);
+}
+function roundCell(p,c,r){const x=p.x*c+c*.08,y=p.y*c+c*.08,s=c*.84,rad=c*r;ctx.beginPath();ctx.roundRect(x,y,s,s,rad);ctx.fill()}
+
+/* ============================================================
+   Loop + input
+   ============================================================ */
+function loop(t){
+  if(!last)last=t;const dt=t-last;last=t;acc+=dt;
+  const wait=competition?1000/Number(ui.competitionSpeed.value):tickMs,maxSteps=competition?3:5;
+  let steps=0;
+  while(acc>=wait&&steps++<maxSteps){step();acc-=wait}
+  if(steps>=maxSteps)acc=0;
+  draw();requestAnimationFrame(loop);
+}
+function pauseToggle(){if(!running)return;paused=!paused;if(paused)showOverlay("Paused","Press Resume, Space, or P to continue.","Resume");else hideOverlay();updateUi()}
+document.addEventListener("keydown",e=>{
+  const k=e.key.toLowerCase(),map={arrowup:"up",w:"up",arrowdown:"down",s:"down",arrowleft:"left",a:"left",arrowright:"right",d:"right"};
+  if(map[k]){e.preventDefault();setDir(map[k])}
+  if(k===" "||k==="p"){e.preventDefault();pauseToggle()}
+  if(k==="enter"&&(!running||gameOver))reset();
+});
+document.querySelectorAll("[data-dir]").forEach(b=>b.addEventListener("click",()=>setDir(b.dataset.dir)));
+ui.overlayButton.onclick=()=>competition?(paused?pauseToggle():startCompetition()):paused?pauseToggle():reset();
+ui.restart.onclick=reset;ui.pause.onclick=pauseToggle;
+ui.humanBtn.onclick=()=>{competition=false;ai=false;updateUi()};
+ui.aiBtn.onclick=()=>{competition=false;ai=true;if(game)game.path=[];updateUi()};
+ui.algorithm.onchange=()=>{if(game){game.alg=ui.algorithm.value;game.path=[]}updateUi()};
+ui.speed.oninput=updateUi;
+ui.boost.onchange=()=>{if(game)tickMs=1000/speedFps();updateUi()};
+ui.appleCount.oninput=()=>{if(competition)startCompetition();else if(game)ensureApples(game);updateUi();draw()};
+ui.size.onchange=()=>competition?startCompetition():reset();
+ui.pathToggle.onchange=()=>{if(game&&ui.pathToggle.value!=="3")game.think=null;draw()};
+/* ---------- Hybrid AI tuning wiring ---------- */
+const BOLD_WORDS=["timid","timid","cautious","cautious","measured","measured","steady","normal","normal","brisk","brisk","bold","bold","daring","reckless","reckless"];
+const RISK_WORDS=[[20,"paranoid"],[40,"careful"],[60,"balanced"],[80,"hungry"],[101,"reckless"]];
+function advSync(){
+  ui.advCycleOut.textContent=adv.cycle+"%";
+  ui.advMarginOut.textContent=adv.margin+"% of length";
+  ui.advHorizonOut.textContent=adv.horizon===0?"off":adv.horizon+" moves";
+  ui.advBoldOut.textContent=BOLD_WORDS[Math.min(BOLD_WORDS.length-1,adv.bold-1)]+" ("+adv.bold+"/16)";
+  ui.advRiskOut.textContent=(RISK_WORDS.find(r=>adv.risk<r[0])||RISK_WORDS[4])[1]+" ("+adv.risk+")";
+  ui.advPatienceOut.textContent=adv.patience+"% of board";
+  ui.advWidthOut.textContent=String(adv.width);
+  ui.advCycle.value=adv.cycle;ui.advMargin.value=adv.margin;ui.advHorizon.value=adv.horizon;
+  ui.advBold.value=adv.bold;ui.advRisk.value=adv.risk;ui.advPatience.value=adv.patience;
+  ui.advWidth.value=adv.width;ui.advChain.value=String(adv.chain);ui.advDepth.value=String(adv.depth);
+  ui.advBody.style.display=adv.on?"grid":"none";
+  ui.advOn.classList.toggle("on",adv.on);ui.advOff.classList.toggle("on",!adv.on);
+}
+const advBind=(el,key,num)=>{if(!el)return;el.addEventListener("input",()=>{adv[key]=num?Number(el.value):el.value;advSync();updateDebug()});el.addEventListener("change",()=>{adv[key]=num?Number(el.value):el.value;advSync();updateDebug()})};
+advBind(ui.advCycle,"cycle",true);advBind(ui.advMargin,"margin",true);advBind(ui.advHorizon,"horizon",true);
+advBind(ui.advBold,"bold",true);advBind(ui.advRisk,"risk",true);advBind(ui.advPatience,"patience",true);
+advBind(ui.advWidth,"width",true);advBind(ui.advChain,"chain",true);advBind(ui.advDepth,"depth",true);
+ui.advOn.onclick=()=>{adv.on=true;advSync();updateDebug()};
+ui.advOff.onclick=()=>{adv.on=false;advSync();updateDebug()};
+ui.advReset.onclick=()=>{Object.assign(adv,ADV_DEFAULTS);advSync();updateDebug()};
+ui.advPro.onclick=()=>{Object.assign(adv,ADV_PRO);adv.on=true;advSync();updateDebug()};
+advSync();
+/* ---------- Decision log controls ---------- */
+ui.dbgLevel.onchange=updateDebug;
+ui.dbgFreeze.onchange=updateDebug;
+ui.dbgCopy.onclick=async()=>{
+  const text=ui.debugOut.textContent||"";
+  try{await navigator.clipboard.writeText(text);}
+  catch(e){const t=document.createElement("textarea");t.value=text;document.body.appendChild(t);t.select();try{document.execCommand("copy")}catch(_){}t.remove()}
+  const old=ui.dbgCopy.textContent;ui.dbgCopy.textContent="Copied!";setTimeout(()=>{ui.dbgCopy.textContent=old},1200);
+};
+ui.competitionBtn.onclick=()=>competition?stopCompetition():startCompetition();
+ui.competitionRestart.onclick=startCompetition;
+ui.competitionSpeed.oninput=()=>{renderCompetition();updateUi()};
+if(!CanvasRenderingContext2D.prototype.roundRect){CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){this.moveTo(x+r,y);this.arcTo(x+w,y,x+w,y+h,r);this.arcTo(x+w,y+h,x,y+h,r);this.arcTo(x,y+h,x,y,r);this.arcTo(x,y,x+w,y,r);return this}}
+game=newState(Number(ui.size.value),ui.algorithm.value);ensureApples(game);
+ui.high.textContent=high;updateUi();draw();requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
