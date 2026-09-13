@@ -70,6 +70,11 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
 
     <div class="card">
       <h2>Settings</h2>
+      <label style="display:flex;align-items:center;flex-direction:row;gap:8px;margin-bottom:6px;background:#0d141c;border:1px solid var(--line);border-radius:8px;padding:10px 12px">
+        <input id="turbo" type="checkbox" style="width:16px;height:16px;margin:0">
+        <b style="color:var(--accent2);text-transform:none;letter-spacing:normal;font-size:13px">⚡ Auto-Turbo — max hardware, zero lag</b>
+      </label>
+      <p class="sub" style="font-size:12px;margin:0 0 12px" id="turboHelp">Locks population, games/genome, worker count and GPU split, then hill-climbs population up or down every generation to find the most this CPU+GPU combo can push through — backing off only just enough to stay smooth, never coasting at low usage or collapsing to nothing.</p>
       <label>Population <b id="oPop">2048</b><input id="pop" type="range" min="128" max="16384" step="128" value="2048"></label>
       <label>Hidden neurons <b id="oHid">24</b><input id="hid" type="range" min="8" max="64" step="4" value="24"></label>
       <div class="rows">
@@ -652,6 +657,28 @@ async function train(){
     lastGenTime=now;
     if(now-state.lastRender>200){state.lastRender=now;render(avgApples)}
 
+    /* Auto-Turbo: hill-climb population size toward whatever this CPU+GPU
+       combo can push through in ~250-450ms/generation. Below that band the
+       hardware is sitting idle, so grow; above it the tab risks feeling
+       laggy, so shrink. Deliberately reactive rather than a one-shot guess,
+       since GPU/CPU throughput (and therefore the right population) drifts
+       as the auto GPU/CPU split and games/genome both settle in. Never
+       collapses toward the slider's floor on its own — it only shrinks
+       when actually over the lag ceiling. */
+    if($("turbo").checked){
+      const popMin=+$("pop").min,popMax=+$("pop").max;
+      const lagCeiling=450,comfortLow=250;
+      const step=Math.max(128,Math.round((cfg.pop*0.15)/128)*128);
+      let nextPop=cfg.pop;
+      if(evalMs<comfortLow&&cfg.pop<popMax)nextPop=Math.min(popMax,cfg.pop+step);
+      else if(evalMs>lagCeiling&&cfg.pop>popMin)nextPop=Math.max(popMin,cfg.pop-step);
+      if(nextPop!==cfg.pop){
+        cfg.pop=nextPop;setSlider("pop",cfg.pop);
+        const now2=performance.now();
+        if(now2-(state.turboLastLog||0)>1000){state.turboLastLog=now2;log("auto-turbo: population → "+cfg.pop+" ("+Math.round(evalMs)+"ms/gen, "+Math.round(state.gpuShare*100)+"% GPU)")}
+      }
+    }
+
     const eliteN=Math.max(1,Math.floor(cfg.pop*cfg.elite));
     const next=[];
     for(let i=0;i<eliteN;i++)next.push(new Float32Array(ranked[i].g));
@@ -771,6 +798,30 @@ $("autoSplit").addEventListener("change",()=>{
   const on=$("autoSplit").checked;
   $("gpu").disabled=on;
   $("gpu").style.opacity=on?0.4:1;
+});
+
+/* Programmatically set a slider + its readout label together (used by
+   auto-turbo, since setting .value alone doesn't fire the "input" sync
+   handlers registered above). */
+function syncSlider(id){
+  const cap=id.charAt(0).toUpperCase()+id.slice(1);
+  const out=$("o"+cap);
+  if(out)out.textContent=(id==="gpu")?$(id).value+"%":$(id).value;
+}
+function setSlider(id,val){$(id).value=String(val);syncSlider(id)}
+
+$("turbo").addEventListener("change",()=>{
+  const on=$("turbo").checked;
+  ["pop","workers","games","gpu"].forEach(id=>{$(id).disabled=on;$(id).style.opacity=on?0.4:1});
+  $("autoSplit").disabled=on;
+  if(on){
+    $("autoSplit").checked=true;$("autoSplit").dispatchEvent(new Event("change"));
+    setSlider("workers",navigator.hardwareConcurrency||4);
+    setSlider("games",$("games").max);
+    log("auto-turbo enabled — population will hill-climb toward this device's ceiling each generation"+(state.training?" (workers/GPU split need a restart to change mid-run)":""));
+  }else{
+    log("auto-turbo disabled — manual settings restored");
+  }
 });
 
 $("start").onclick=()=>{
