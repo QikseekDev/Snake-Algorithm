@@ -82,8 +82,12 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
         <label>CPU workers <b id="oWorkers">8</b><input id="workers" type="range" min="0" max="32" step="1" value="8"></label>
         <label>Stop at gen (0=∞) <b id="oMaxGen">0</b><input id="maxGen" type="range" min="0" max="5000" step="50" value="0"></label>
       </div>
-      <label>GPU usage <b id="oGpu">100%</b><input id="gpu" type="range" min="0" max="100" step="5" value="100"></label>
-      <p class="sub" style="font-size:12px">100% runs everything on the GPU (fastest when a GPU is available). Lower it to offload some genomes to CPU workers — useful mainly when the GPU is memory-limited or busy elsewhere.</p>
+      <label>GPU usage <b id="oGpu">50%</b><input id="gpu" type="range" min="0" max="100" step="5" value="50"></label>
+      <label style="display:flex;align-items:center;flex-direction:row;gap:8px;margin-bottom:6px">
+        <input id="autoSplit" type="checkbox" style="width:16px;height:16px;margin:0">
+        <b style="color:var(--text);text-transform:none;letter-spacing:normal;font-size:13px">Auto-balance GPU / CPU split</b>
+      </label>
+      <p class="sub" style="font-size:12px" id="gpuHelp">Genomes are split between GPU and CPU workers. Drag the slider to set the split manually — 50% is an even split. Turn on auto-balance to have it continuously re-tune itself each generation toward whichever split yields the most generations per second (more gens/sec means faster progress toward a better score).</p>
     </div>
   </div>
 </div>
@@ -530,15 +534,27 @@ function cpuEvaluate(genomes,cfg,gl,baseSeed,offset){
 async function evaluate(pop,cfg,gl,seed){
   const fit=new Float32Array(pop.length),app=new Float32Array(pop.length),stp=new Float32Array(pop.length);
   const manual=+$("gpu").value;
+  const auto=$("autoSplit").checked;
   let share=0;
-  /* GPU-only by default: splitting a slice to CPU workers costs a
-     postMessage + Promise.all round trip every generation, and on this
-     workload the GPU is fast enough that the CPU's contribution never
-     earns back that overhead — so unless the person explicitly dials
-     the GPU-usage slider down, run everything on the GPU. */
-  if(gpu.ok&&(state.pool.length===0||manual>=100))share=1;
-  else if(!gpu.ok)share=0;
-  else share=manual/100;
+  if(!gpu.ok){
+    share=0;
+  }else if(!state.pool.length){
+    /* no CPU workers spawned this run (manual 100% and auto both off) */
+    share=1;
+  }else if(auto){
+    /* Auto-balance: pick the split that finishes the GPU slice and the
+       CPU slice at the same time, which is what maximizes genomes/sec
+       (and therefore gens/sec — more gens/sec means faster convergence
+       toward a better score). Each pass's measured throughput
+       (gpuRate/cpuRate, in genomes/sec) updates an EMA, and the target
+       share is just each side's fraction of the combined throughput.
+       Starts at an even 50/50 split before any measurements exist. */
+    if(state.gpuRate>0&&state.cpuRate>0)share=state.gpuRate/(state.gpuRate+state.cpuRate);
+    else share=0.5;
+    share=Math.min(0.97,Math.max(0.03,share));
+  }else{
+    share=manual/100;
+  }
   state.gpuShare=share;
   let nGpu=Math.round(pop.length*share);
   if(!gpu.ok)nGpu=0;
@@ -584,7 +600,7 @@ async function train(){
      to pick up a new value, same as pop/hidden/etc. Re-checking and
      respawning workers every generation was the source of the extra
      lag, so that's gone. */
-  const needsCpu=!gpu.ok||(+$("gpu").value)<100;
+  const needsCpu=!gpu.ok||$("autoSplit").checked||(+$("gpu").value)<100;
   spawnPool(needsCpu?Math.max(1,cfg.workers):0);
   let pop=[];
   if(state.brain&&state.brain.hidden===cfg.hidden){
@@ -665,7 +681,7 @@ function render(avg){
   $("sAvg").textContent=(avg!==undefined)?String(Math.round(avg*10)/10):(h?String(Math.round(h.avg*10)/10):"-");
   const secs=(performance.now()-state.started)/1000;
   $("sRate").textContent=state.training&&secs>0?Math.round(state.evaluated/secs).toLocaleString()+" ("+state.gamesEff+"/genome)":"idle";
-  $("sSplit").textContent=gpu.ok?Math.round(state.gpuShare*100)+"% GPU / "+(100-Math.round(state.gpuShare*100))+"% CPU":"CPU only";
+  $("sSplit").textContent=gpu.ok?Math.round(state.gpuShare*100)+"% GPU / "+(100-Math.round(state.gpuShare*100))+"% CPU"+($("autoSplit").checked?" (auto)":""):"CPU only";
   $("sGps").textContent=state.training?(Math.round(state.gps*10)/10).toFixed(1):"-";
   chart();
 }
@@ -751,6 +767,11 @@ document.addEventListener("visibilitychange",()=>{
   $(k).addEventListener("input",sync);sync();
 });
 $("gpu").addEventListener("input",()=>{$("oGpu").textContent=$("gpu").value+"%"});
+$("autoSplit").addEventListener("change",()=>{
+  const on=$("autoSplit").checked;
+  $("gpu").disabled=on;
+  $("gpu").style.opacity=on?0.4:1;
+});
 
 $("start").onclick=()=>{
   if(state.training){state.training=false;$("start").textContent="Stopping…";return}
