@@ -133,8 +133,8 @@ canvas{position:relative;width:min(100%,calc(100vh - 130px));max-width:900px;asp
       <span class="dbgTitle">Hybrid AI tuning</span>
        <div class="switch wide"><button id="advOff" class="on">Standard</button><button id="advOn">Super advanced</button></div>
        <button id="advPro" class="wide">Apply suggested pro settings</button>
-       <label class="wide" style="flex-direction:row;display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px"><input id="advBrain" type="checkbox" style="width:auto">Use trained brain as advisor <span id="advBrainState" class="hint" style="margin:0">(no brain loaded)</span></label>
-       <label class="wide" id="advBrainWWrap" style="display:none">Advisor influence <b id="advBrainWOut" style="color:var(--text)">balanced</b><input id="advBrainW" type="range" min="1" max="10" value="5"><span class="readout"><span>Subtle</span><span>Dominant</span></span></label>
+       <label class="wide" style="flex-direction:row;display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px"><input id="advBrain" type="checkbox" checked style="width:auto">Use trained brain as advisor <span id="advBrainState" class="hint" style="margin:0">(no brain loaded)</span></label>
+       <label class="wide" id="advBrainWWrap" style="display:grid">Advisor influence <b id="advBrainWOut" style="color:var(--text)">dominant</b><input id="advBrainW" type="range" min="1" max="10" value="10"><span class="readout"><span>Subtle</span><span>Dominant</span></span></label>
        <div id="advBody" style="display:none;gap:12px;grid-template-columns:1fr">
         <label class="wide">Switch to cycle at <b id="advCycleOut" style="color:var(--text)">45%</b> full <input id="advCycle" type="range" min="15" max="95" value="45"></label>
         <label class="wide">Safety margin <b id="advMarginOut" style="color:var(--text)">30% of length</b> <input id="advMargin" type="range" min="0" max="120" value="30"></label>
@@ -224,7 +224,7 @@ Object.assign(ui,{nnGen:$("nnGen"),nnBestApples:$("nnBestApples"),nnAvgApples:$(
    Every knob has a safe default that reproduces the standard
    behaviour, so Standard mode === the original tuned AI.
    ============================================================ */
-const ADV_DEFAULTS={cycle:45,margin:30,horizon:70,bold:8,risk:50,patience:35,width:8,chain:1,depth:1,search:"auto",trap:1,coil:35,tail:15,adapt:1,idle:"tail",brain:0,brainW:5};
+const ADV_DEFAULTS={cycle:45,margin:30,horizon:70,bold:8,risk:50,patience:35,width:8,chain:1,depth:1,search:"auto",trap:1,coil:35,tail:15,adapt:1,idle:"tail",brain:1,brainW:10};
 const NN_DEFAULTS={pop:300,hidden:20,games:3,mutRate:8,mutSize:35,elite:10,steps:1500,board:"12",maxGen:"0",seedBest:true,autosave:true,guard:true};
 const ADV_PRO={cycle:40,margin:40,horizon:140,bold:11,risk:35,patience:80,width:16,chain:2,depth:2,search:"auto",trap:2,coil:55,tail:25,adapt:1,idle:"cycle"};
 /* Super AI (God Mode): maximum-survival preset. width/depth are back to full
