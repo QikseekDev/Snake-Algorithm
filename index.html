@@ -1688,7 +1688,25 @@ function neuroOpenFile(){
 ui.nnLoad.onclick=()=>neuroLoadLocal(false);
 ui.nnImport.onclick=neuroOpenFile;
 ui.nnUse.onclick=()=>{ui.algorithm.value="neuro";competition=false;ai=true;if(game){game.alg="neuro";game.path=[]}updateUi()};
-neuroLoadLocal(true);neuroRender();
+
+/* On load: prefer a brain already saved in this browser (from a previous
+   training session here), but if there isn't one, try to fetch a "brain.json"
+   sitting next to this file. That's what lets a single exported/trained
+   index.html + brain.json pair be handed to someone else (emailed, dropped on
+   a server, opened locally) and have the AI already loaded with no extra
+   steps. Runs without blocking the rest of page setup below, and fails
+   silently if there's no bundled file or the browser blocks the fetch (e.g.
+   a bare file:// page with no local server) — in that case the page just
+   starts with no brain, same as before. */
+function neuroAutoLoad(){
+  neuroRender();
+  if(localStorage.getItem(NEURO_KEY)){neuroLoadLocal(true);return}
+  fetch("brain.json",{cache:"no-store"})
+    .then(res=>{if(!res.ok)throw new Error("no brain.json here");return res.text()})
+    .then(text=>{brainFromJSON(text);neuroToast("brain loaded from brain.json")})
+    .catch(()=>{/* no bundled brain.json (or fetch blocked) — nothing to do */});
+}
+neuroAutoLoad();
 
 game=newState(Number(ui.size.value),ui.algorithm.value);ensureApples(game);
 ui.high.textContent=high;updateUi();draw();requestAnimationFrame(loop);
