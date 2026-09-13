@@ -7,7 +7,7 @@
 <style>
 :root{color-scheme:dark;--bg:#0b0f14;--panel:#121922;--panel2:#17212d;--line:#263241;--text:#eaf1f8;--muted:#8fa1b4;--accent:#2dd4bf;--accent2:#f59e0b;--bad:#fb7185;--good:#7dd3fc;--cell:#101820;--path:#60a5fa}
 *{box-sizing:border-box}html,body{height:100%}body{margin:0;background:radial-gradient(circle at top left,#172033 0,#0b0f14 42%,#070a0e 100%);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow-x:hidden}
-button,select,input{font:inherit}button,select{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px 12px;min-height:42px}button{cursor:pointer;transition:.16s transform,.16s border-color,.16s background}button:hover{transform:translateY(-1px);border-color:#3e5369;background:#1d2a38}button:active{transform:translateY(0)}button.primary{background:linear-gradient(180deg,#22c7b5,#139b8d);border-color:#3be3d2;color:#05201d;font-weight:800}a.primary{background:linear-gradient(180deg,#22c7b5,#139b8d);border-color:#3be3d2;color:#05201d;font-weight:800}label{display:grid;gap:6px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}select,input[type=range]{width:100%}
+button,select,input{font:inherit}button,select{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px 12px;min-height:42px}button{cursor:pointer;transition:.16s transform,.16s border-color,.16s background}button:hover{transform:translateY(-1px);border-color:#3e5369;background:#1d2a38}button:active{transform:translateY(0)}button.primary{background:linear-gradient(180deg,#22c7b5,#139b8d);border-color:#3be3d2;color:#05201d;font-weight:800}label{display:grid;gap:6px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}select,input[type=range]{width:100%}
 .app{min-height:100%;display:grid;grid-template-columns:minmax(300px,1fr) 340px;gap:18px;padding:18px;max-width:1420px;margin:0 auto}.stage{display:grid;grid-template-rows:auto 1fr;gap:14px;min-width:0}.top{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{display:flex;align-items:center;gap:12px}.mark{width:38px;height:38px;border-radius:9px;background:conic-gradient(from 180deg,var(--accent),#7dd3fc,var(--accent2),var(--accent));box-shadow:0 0 30px #2dd4bf33}.title h1{margin:0;font-size:24px;line-height:1.05;letter-spacing:0}.title p{margin:3px 0 0;color:var(--muted)}.status{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.pill{border:1px solid var(--line);background:#111923cc;border-radius:999px;padding:7px 10px;color:var(--muted)}.pill strong{color:var(--text)}
 .boardWrap{position:relative;display:grid;place-items:center;min-height:0;background:linear-gradient(180deg,#0d131b,#090d12);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 18px 60px #0008;overflow:hidden}.boardWrap:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,#ffffff08,transparent);transform:translateX(-100%);animation:sheen 8s infinite}@keyframes sheen{0%,70%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 canvas{position:relative;width:min(100%,calc(100vh - 130px));max-width:900px;aspect-ratio:1/1;border-radius:8px;background:#0b1218;image-rendering:pixelated;touch-action:none}.overlay{position:absolute;inset:14px;display:none;place-items:center;text-align:center;background:#070a0eb8;backdrop-filter:blur(5px);border-radius:8px}.overlay.show{display:grid}.modal{max-width:390px;padding:24px;border:1px solid #314154;background:#101822;border-radius:10px;box-shadow:0 20px 60px #000b}.modal h2{margin:0 0 8px;font-size:30px}.modal p{margin:0 0 18px;color:var(--muted)}
@@ -93,14 +93,37 @@ canvas{position:relative;width:min(100%,calc(100vh - 130px));max-width:900px;asp
       <label>AI path <select id="pathToggle"><option value="3" selected>Route + escapes + AI thinking</option><option value="2">Route + escapes</option><option value="1">Route only</option><option value="0">Hide</option></select></label>
     </div>
     <div id="nnPanel" class="wide dbg">
-      <span class="dbgTitle">Neural Net</span>
-      <p class="hint">Training is handled separately. This page only loads a trained brain and uses it for live play.</p>
-      <a href="/train.html" class="primary" style="display:grid;place-items:center;text-decoration:none;border:1px solid #3be3d2;border-radius:8px;padding:10px 12px;min-height:42px">Open Neural Net Trainer</a>
+      <span class="dbgTitle">Neural net trainer (neuroevolution)</span>
+      <div class="compSummary">
+        <div class="stat"><span>Generation</span><b id="nnGen">0</b></div>
+        <div class="stat"><span>Best apples</span><b id="nnBestApples">-</b></div>
+        <div class="stat"><span>Avg apples</span><b id="nnAvgApples">-</b></div>
+        <div class="stat"><span>Throughput</span><b id="nnRate">idle</b></div>
+      </div>
+      <canvas id="nnChart" width="320" height="90" style="width:100%;height:90px;border:1px solid var(--line);border-radius:8px"></canvas>
+      <button id="nnStart" class="primary wide">Start training</button>
+      <div id="nnBody" style="display:grid;gap:12px;grid-template-columns:1fr">
+        <label class="wide">Population <b id="nnPopOut" style="color:var(--text)">300</b><input id="nnPop" type="range" min="20" max="2000" step="10" value="300"></label>
+        <label class="wide">Hidden neurons <b id="nnHiddenOut" style="color:var(--text)">20</b><input id="nnHidden" type="range" min="4" max="64" step="1" value="20"></label>
+        <label class="wide">Games per snake <b id="nnGamesOut" style="color:var(--text)">3</b><input id="nnGames" type="range" min="1" max="10" step="1" value="3"></label>
+        <label class="wide">Mutation rate <b id="nnMutRateOut" style="color:var(--text)">8%</b><input id="nnMutRate" type="range" min="1" max="50" step="1" value="8"></label>
+        <label class="wide">Mutation strength <b id="nnMutSizeOut" style="color:var(--text)">0.35</b><input id="nnMutSize" type="range" min="5" max="150" step="5" value="35"></label>
+        <label class="wide">Keep best <b id="nnEliteOut" style="color:var(--text)">10%</b><input id="nnElite" type="range" min="1" max="40" step="1" value="10"></label>
+        <label class="wide">CPU workers <b id="nnWorkersOut" style="color:var(--text)">4</b><input id="nnWorkers" type="range" min="1" max="32" step="1" value="8"></label>
+        <label class="wide">Move limit per game <b id="nnStepsOut" style="color:var(--text)">1500</b><input id="nnSteps" type="range" min="200" max="6000" step="100" value="1500"></label>
+        <div class="controls">
+          <label>Training board <select id="nnBoard"><option>8</option><option>10</option><option selected>12</option><option>16</option><option>20</option></select></label>
+          <label>Generations <select id="nnMaxGen"><option value="0" selected>Endless</option><option value="25">25</option><option value="100">100</option><option value="500">500</option><option value="2000">2000</option></select></label>
+        </div>
+        <label class="wide" style="flex-direction:row;display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px"><input id="nnSeedBest" type="checkbox" checked style="width:auto">Continue from the current brain</label>
+        <label class="wide" style="flex-direction:row;display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px"><input id="nnAutosave" type="checkbox" checked style="width:auto">Autosave every improvement</label>
+        <label class="wide" style="flex-direction:row;display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px"><input id="nnGuard" type="checkbox" checked style="width:auto">Safety guard while playing</label>
+      </div>
+      <button id="nnReset" class="wide">Reset to defaults</button>
+      <button id="nnUse" class="wide">Play with this brain</button>
       <div class="controls">
-        <button id="nnLoad">Load from browser storage</button>
-        <button id="nnImport">Load brain file</button>
-        <button id="nnSave">Save to browser storage</button>
-        <button id="nnExport">Save brain file</button>
+        <button id="nnSave">Save to browser</button><button id="nnLoad">Load from browser</button>
+        <button id="nnExport">Save to file</button><button id="nnImport">Load file</button>
         <button id="nnClear" class="wide">Delete saved brain</button>
       </div>
       <p class="hint">Brain: <b id="nnBrain" style="color:var(--text)">none loaded</b></p>
@@ -189,10 +212,12 @@ const ui={score:$("score"),high:$("high"),length:$("length"),speedOut:$("speedOu
   advSearch:$("advSearch"),advTrap:$("advTrap"),advCoil:$("advCoil"),advCoilOut:$("advCoilOut"),advTail:$("advTail"),advTailOut:$("advTailOut"),advAdapt:$("advAdapt"),advIdle:$("advIdle"),advGod:$("advGod"),
   advBrain:$("advBrain"),advBrainState:$("advBrainState"),advBrainW:$("advBrainW"),advBrainWOut:$("advBrainWOut"),advBrainWWrap:$("advBrainWWrap"),
   dbgLevel:$("dbgLevel"),dbgFreeze:$("dbgFreeze"),dbgCopy:$("dbgCopy"),dbgMode:$("dbgMode"),dbgTime:$("dbgTime"),dbgSafety:$("dbgSafety")};
-Object.assign(ui,{
-  nnSave:$("nnSave"),nnLoad:$("nnLoad"),nnExport:$("nnExport"),nnImport:$("nnImport"),
-  nnClear:$("nnClear"),nnBrain:$("nnBrain"),nnStatus:$("nnStatus")
-});
+Object.assign(ui,{nnGen:$("nnGen"),nnBestApples:$("nnBestApples"),nnAvgApples:$("nnAvgApples"),nnRate:$("nnRate"),nnChart:$("nnChart"),nnStart:$("nnStart"),
+  nnPop:$("nnPop"),nnPopOut:$("nnPopOut"),nnHidden:$("nnHidden"),nnHiddenOut:$("nnHiddenOut"),nnGames:$("nnGames"),nnGamesOut:$("nnGamesOut"),
+  nnMutRate:$("nnMutRate"),nnMutRateOut:$("nnMutRateOut"),nnMutSize:$("nnMutSize"),nnMutSizeOut:$("nnMutSizeOut"),nnElite:$("nnElite"),nnEliteOut:$("nnEliteOut"),
+  nnWorkers:$("nnWorkers"),nnWorkersOut:$("nnWorkersOut"),nnSteps:$("nnSteps"),nnStepsOut:$("nnStepsOut"),nnBoard:$("nnBoard"),nnMaxGen:$("nnMaxGen"),
+  nnSeedBest:$("nnSeedBest"),nnAutosave:$("nnAutosave"),nnGuard:$("nnGuard"),nnUse:$("nnUse"),nnSave:$("nnSave"),nnLoad:$("nnLoad"),nnExport:$("nnExport"),nnReset:$("nnReset"),
+  nnImport:$("nnImport"),nnClear:$("nnClear"),nnBrain:$("nnBrain"),nnStatus:$("nnStatus")});
 
 /* ============================================================
    Hybrid AI tuning ("super advanced" mode)
@@ -200,6 +225,7 @@ Object.assign(ui,{
    behaviour, so Standard mode === the original tuned AI.
    ============================================================ */
 const ADV_DEFAULTS={cycle:45,margin:30,horizon:70,bold:8,risk:50,patience:35,width:8,chain:1,depth:1,search:"auto",trap:1,coil:35,tail:15,adapt:1,idle:"tail",brain:1,brainW:10};
+const NN_DEFAULTS={pop:300,hidden:20,games:3,mutRate:8,mutSize:35,elite:10,steps:1500,board:"12",maxGen:"0",seedBest:true,autosave:true,guard:true};
 const ADV_PRO={cycle:40,margin:40,horizon:140,bold:11,risk:35,patience:80,width:16,chain:2,depth:2,search:"auto",trap:2,coil:55,tail:25,adapt:1,idle:"cycle"};
 /* Super AI (God Mode): maximum-survival preset. width/depth are back to full
    thoroughness — MAX_DRY_STEPS (below) is what actually bounds the cost now,
@@ -1420,13 +1446,23 @@ function roundCell(p,c,r){const x=p.x*c+c*.08,y=p.y*c+c*.08,s=c*.84,rad=c*r;ctx.
 /* ============================================================
    Loop + input
    ============================================================ */
+let lastDraw=0;
 function loop(t){
   if(!last)last=t;const dt=t-last;last=t;acc+=dt;
-  const wait=competition?1000/Number(ui.competitionSpeed.value):tickMs,maxSteps=competition?3:(ai?3:5);
+  // While the neural trainer is running, the live board gives up nearly all of
+  // its frame budget so the CPU stays with the training workers: at most ~4
+  // rendered frames and ~4 game ticks per second (each AI tick runs flood
+  // fills that get more expensive as the snake grows).
+  if(neuro.training){
+    if(t-lastDraw<1000){requestAnimationFrame(loop);return}
+    lastDraw=t;
+    if(acc>1000)acc=1000;
+  }
+  const wait=competition?1000/Number(ui.competitionSpeed.value):Math.max(tickMs,neuro.training?1000:0),maxSteps=competition?3:(neuro.training?1:(ai?3:5));
   let steps=0;
   while(acc>=wait&&steps++<maxSteps){step();acc-=wait}
   if(steps>=maxSteps)acc=0;
-  if(ai&&!competition)updateAiOverlay();
+  if(ai&&!competition&&!neuro.training)updateAiOverlay();
   if(document.visibilityState!=="hidden")draw();
   requestAnimationFrame(loop);
 }
@@ -1515,8 +1551,16 @@ const DIR8=[[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];
 const geneLen=h=>h*NEURO_IN+h+NEURO_OUT*h+NEURO_OUT;
 
 const neuro={
-  brain:null,
+  brain:null,          // {hidden, weights:Float32Array, gen, apples, fitness, board}
+  training:false,
+  gen:0,
   best:null,
+  history:[],
+  pool:[],
+  started:0,
+  evaluated:0,
+  stop:false,
+  autosave:true,
   guard:true,
   fileHandle:null,
 };
@@ -1638,7 +1682,292 @@ function neuroMove(st){
   return pick;
 }
 
-/* ---------- brain persistence ---------- */
+/* ---------- worker source (kept inline so the file stays standalone) ---------- */
+const NEURO_WORKER_SRC=[
+"'use strict';",
+"var IN=32,OUT=4;",
+"var D4=[[0,-1],[1,0],[0,1],[-1,0]];",
+"var D8=[[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];",
+"var E8X=new Int8Array([0,1,1,1,0,-1,-1,-1]),E8Y=new Int8Array([-1,-1,0,1,1,1,0,-1]);",
+"var D4X=new Int8Array([0,1,0,-1]),D4Y=new Int8Array([-1,0,1,0]);",
+"function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}",
+// Same 32 inputs as before (brains stay compatible), but the wall distance and
+// the apple hit are pure arithmetic instead of walking the ray cell by cell,
+// and the body scan stops at the first segment it meets. This is the hottest
+// function in training — it used to run 8 full board-width walks per move.
+"function sense(b,occ,hx,hy,fx,fy,dirIdx,tailIdx,inp){",
+"  var i=0;",
+"  for(var k=0;k<8;k++){",
+"    var dx=E8X[k],dy=E8Y[k];",
+"    var lim=1e9;",
+"    if(dx>0){lim=b-hx}else if(dx<0){lim=hx+1}",
+"    if(dy>0){if(b-hy<lim)lim=b-hy}else if(dy<0){if(hy+1<lim)lim=hy+1}",
+"    var food=0,t;",
+"    if(dx!==0){t=(fx-hx)/dx;if(hy+dy*t!==fy)t=-1}else{t=(fy-hy)/dy;if(fx!==hx)t=-1}",
+"    if(t>=1&&t<lim)food=1/t;",
+"    var body=0,idx=hy*b+hx,st=dy*b+dx;",
+"    for(var q=1;q<lim;q++){idx+=st;if(occ[idx]){body=1/q;break}}",
+"    inp[i++]=1/lim;inp[i++]=food;inp[i++]=body}",
+"  for(var k2=0;k2<4;k2++)inp[i++]=k2===dirIdx?1:0;",
+"  for(var k3=0;k3<4;k3++)inp[i++]=k3===tailIdx?1:0;",
+"}",
+"function forward(w,off,hid,inp,out,sc){",
+"  var p=off,j,k,s;",
+"  for(j=0;j<hid;j++){s=0;for(k=0;k<IN;k++)s+=w[p++]*inp[k];sc[j]=s}",
+"  for(j=0;j<hid;j++)sc[j]=Math.tanh(sc[j]+w[p++]);",
+"  for(var o=0;o<OUT;o++){s=0;for(j=0;j<hid;j++)s+=w[p++]*sc[j];out[o]=s}",
+"  for(var o2=0;o2<OUT;o2++)out[o2]+=w[p++];",
+"}",
+// Scratch buffers are reused across every game a worker plays: allocating a
+// fresh occupancy grid + snake arrays per game meant constant GC pressure that
+// got worse as generations produced longer-surviving snakes.
+"var W={n:-1,hid:-1};",
+"function bufs(n,hid){",
+"  if(W.n!==n){W.n=n;W.occ=new Uint8Array(n);W.sx=new Int16Array(n+4);W.sy=new Int16Array(n+4)}",
+"  if(W.hid!==hid){W.hid=hid;W.sc=new Float32Array(hid)}",
+"  if(!W.inp){W.inp=new Float32Array(IN);W.out=new Float32Array(OUT)}",
+"  return W}",
+"function play(w,off,cfg,seed){",
+"  var b=cfg.board,n=b*b,hid=cfg.hidden,rng=mulberry(seed),B=bufs(n,hid);",
+"  var occ=B.occ,inp=B.inp,out=B.out,sc=B.sc,sx=B.sx,sy=B.sy,cap=n+4;",
+"  occ.fill(0);",
+// The snake is a ring buffer: h is the head slot, body cell i lives at
+// (h+i)%cap. The old code shifted every segment by one on EVERY step, so a
+// game cost O(steps x length) — that quadratic is why generation 300+ crawled
+// even though the games/s counter started out fine.
+"  var m=(b>>1),h=0,len=3;",
+"  sx[0]=m+1;sy[0]=m;sx[1]=m;sy[1]=m;sx[2]=m-1;sy[2]=m;",
+"  for(var i=0;i<len;i++)occ[sy[i]*b+sx[i]]=1;",
+"  var fx=0,fy=0;",
+"  function spawn(){var free=n-len;if(free<=0){return false}var t=Math.floor(rng()*free),c=-1;",
+"    for(var q=0;q<n;q++){if(!occ[q]){if(t--<=0){c=q;break}}}",
+"    if(c<0)return false;fx=c%b;fy=(c-fx)/b;return true}",
+"  spawn();",
+"  var dirIdx=1,steps=0,apples=0,hunger=0,hungerCost=0,limit=cfg.starve+cfg.board*4,alive=true;",
+"  var maxSteps=cfg.maxSteps;",
+"  while(alive&&steps<maxSteps){",
+"    var ti=(h+len-1)%cap,pi=(h+len-2)%cap;",
+"    var tdx=sx[pi]-sx[ti],tdy=sy[pi]-sy[ti],tailIdx=0;",
+"    if(tdy<0)tailIdx=0;else if(tdx>0)tailIdx=1;else if(tdy>0)tailIdx=2;else if(tdx<0)tailIdx=3;",
+"    sense(b,occ,sx[h],sy[h],fx,fy,dirIdx,tailIdx,inp);",
+"    forward(w,off,hid,inp,out,sc);",
+"    var bi=0;for(var o=1;o<4;o++)if(out[o]>out[bi])bi=o;",
+"    if((bi+2)%4===dirIdx){var bj=-1;for(var o2=0;o2<4;o2++){if((o2+2)%4===dirIdx)continue;if(bj<0||out[o2]>out[bj])bj=o2}bi=bj}",
+"    dirIdx=bi;",
+"    var nx=sx[h]+D4X[bi],ny=sy[h]+D4Y[bi];",
+"    if(nx<0||ny<0||nx>=b||ny>=b){alive=false;break}",
+"    var eats=(nx===fx&&ny===fy);",
+"    var tailX=sx[ti],tailY=sy[ti];",
+"    if(occ[ny*b+nx]&&!(!eats&&nx===tailX&&ny===tailY)){alive=false;break}",
+"    if(!eats){occ[tailY*b+tailX]=0}else{len++}",
+"    h=(h+cap-1)%cap;",
+"    sx[h]=nx;sy[h]=ny;occ[ny*b+nx]=1;",
+"    steps++;hunger++;",
+// bad signal: once a run is past halfway through its hunger window
+// without eating, cost accrues — enough to make stalling/looping a
+// losing strategy without swamping the fitness signal for genomes
+// that are still legitimately hunting for the apple.
+"    if(hunger>limit*0.5)hungerCost+=(hunger-limit*0.5)*cfg.hungerPenalty;",
+"    if(eats){apples++;hunger=0;if(!spawn())break}",
+"    if(hunger>limit)break;",
+"  }",
+"  var fit=apples*cfg.appleReward+steps*cfg.stepReward-hungerCost;",
+"  if(apples>0)fit+=Math.min(steps,apples*cfg.board*4)*0.1;",
+"  return{fit:fit,apples:apples,steps:steps}",
+"}",
+"onmessage=function(e){",
+"  var d=e.data,w=d.weights,cfg=d.cfg,count=d.count,gl=d.geneLen;",
+"  var fit=new Float32Array(count),app=new Float32Array(count),stp=new Float32Array(count);",
+"  for(var i=0;i<count;i++){",
+"    var f=0,a=0,s=0;",
+"    for(var g=0;g<cfg.games;g++){var r=play(w,i*gl,cfg,(d.seed+g*7919+i*104729)|0);f+=r.fit;a+=r.apples;s+=r.steps}",
+"    fit[i]=f/cfg.games;app[i]=a/cfg.games;stp[i]=s/cfg.games;",
+"  }",
+"  postMessage({id:d.id,fit:fit,app:app,stp:stp},[fit.buffer,app.buffer,stp.buffer]);",
+"};"
+].join("\n");
+
+let neuroWorkerURL=null;
+function neuroWorkerUrl(){
+  if(!neuroWorkerURL)neuroWorkerURL=URL.createObjectURL(new Blob([NEURO_WORKER_SRC],{type:"text/javascript"}));
+  return neuroWorkerURL;
+}
+function neuroSpawnPool(count){
+  neuroKillPool();
+  for(let i=0;i<count;i++)neuro.pool.push(new Worker(neuroWorkerUrl()));
+}
+function neuroKillPool(){neuro.pool.forEach(w=>w.terminate());neuro.pool=[]}
+
+/* ---------- genetic algorithm ---------- */
+function neuroCfg(){
+  return{
+    pop:Number(ui.nnPop.value),
+    hidden:Number(ui.nnHidden.value),
+    games:Number(ui.nnGames.value),
+    board:Number(ui.nnBoard.value),
+    mutRate:Number(ui.nnMutRate.value)/100,
+    mutSize:Number(ui.nnMutSize.value)/100,
+    elite:Number(ui.nnElite.value)/100,
+    workers:Number(ui.nnWorkers.value),
+    maxGen:Number(ui.nnMaxGen.value),
+    maxSteps:Number(ui.nnSteps.value),
+    starve:60,
+    appleReward:300,
+    stepReward:0.2,
+    hungerPenalty:0.05,
+  };
+}
+/* Box–Muller was a real cost on the main thread: pop × genes calls per
+   generation, each with log/cos and two retry loops. A 4-uniform sum
+   approximates a unit gaussian well enough for mutation and is far cheaper. */
+function gauss(){return (Math.random()+Math.random()+Math.random()+Math.random()-2)*1.73}
+/* The whole population lives in ONE flat Float32Array (genome i at i*gl).
+   The old code kept an array per genome and allocated fresh arrays in every
+   crossover/mutation and again when flattening for the workers — pop 300 ×
+   744 floats of garbage several times per generation, which was the main
+   source of main-thread stutter while training. */
+function randomGenomeInto(g,off,len){for(let i=0;i<len;i++)g[off+i]=gauss()*0.5}
+function mutateInPlace(g,off,len,rate,size){for(let i=0;i<len;i++)if(Math.random()<rate)g[off+i]+=gauss()*size}
+function crossoverInto(dst,doff,src,aoff,boff,len){const cut=1+Math.floor(Math.random()*(len-1));dst.set(src.subarray(aoff,aoff+cut),doff);dst.set(src.subarray(boff+cut,boff+len),doff+cut)}
+function tournament(fit,popN,k){let best=-1;for(let i=0;i<k;i++){const c=Math.floor(Math.random()*popN);if(best<0||fit[c]>fit[best])best=c}return best}
+
+function neuroEvaluate(pop,cfg,gl,popN,fit,app,stp){
+  const workers=neuro.pool;
+  // Small tasks in a shared queue instead of one giant slice per worker:
+  // a slow core can no longer hold up the whole generation.
+  const per=Math.max(4,Math.ceil(popN/(workers.length*4)));
+  const tasks=[];
+  for(let from=0;from<popN;from+=per)tasks.push([from,Math.min(popN,from+per)]);
+  const seed=(Math.random()*0x7fffffff)>>>0;
+  let next=0;
+  return Promise.all(workers.map(w=>new Promise(resolve=>{
+    const run=()=>{
+      if(next>=tasks.length||!neuro.training){w.onmessage=null;resolve();return}
+      const [from,to]=tasks[next++];
+      const count=to-from;
+      const flat=pop.slice(from*gl,to*gl);
+      /* results land straight into the shared fitness arrays — no per-task
+         result objects to collect and re-expand on the main thread */
+      w.onmessage=e=>{const d=e.data;fit.set(d.fit,from);app.set(d.app,from);stp.set(d.stp,from);run()};
+      w.postMessage({id:from,weights:flat,count,geneLen:gl,cfg,seed},[flat.buffer]);
+    };
+    run();
+  })));
+}
+
+async function neuroTrain(){
+  const cfg=neuroCfg();
+  const gl=geneLen(cfg.hidden),popN=cfg.pop;
+  neuroSpawnPool(Math.max(1,cfg.workers));
+  let pop=new Float32Array(popN*gl),next=new Float32Array(popN*gl);
+  if(neuro.brain&&neuro.brain.hidden===cfg.hidden&&ui.nnSeedBest.checked){
+    for(let i=0;i<popN;i++){
+      pop.set(neuro.brain.weights.subarray(0,gl),i*gl);
+      if(i>0)mutateInPlace(pop,i*gl,gl,cfg.mutRate,cfg.mutSize);
+    }
+  }else{
+    for(let i=0;i<popN;i++)randomGenomeInto(pop,i*gl,gl);
+  }
+  /* per-generation scratch, allocated once up front instead of per genome */
+  const fitA=new Float32Array(popN),appA=new Float32Array(popN),stpA=new Float32Array(popN);
+  const order=new Uint32Array(popN);
+  neuro.gen=0;neuro.history=[];neuro.started=performance.now();neuro.evaluated=0;neuro.lastSave=0;neuro.lastRender=0;
+  /* A generation gets slower purely because the snakes get better: a gen-10
+     genome dies after ~50 moves, a gen-300 one survives until the move limit,
+     so each game simulates 20-30x more moves. To keep generations/second
+     roughly flat, the number of games each genome is scored on shrinks as the
+     games get longer (never below 1), keeping the simulated work per
+     generation inside a constant budget. */
+  neuro.stepAvg=0;neuro.gamesEff=cfg.games;
+  while(neuro.training&&(cfg.maxGen===0||neuro.gen<cfg.maxGen)){
+    const budget=cfg.games*400;
+    const games=neuro.stepAvg>0?Math.max(1,Math.min(cfg.games,Math.round(budget/neuro.stepAvg))):cfg.games;
+    neuro.gamesEff=games;
+    await neuroEvaluate(pop,{...cfg,games},gl,popN,fitA,appA,stpA);
+    if(!neuro.training)break;
+    /* sort genome INDICES by fitness — no per-genome result objects at all */
+    for(let i=0;i<popN;i++)order[i]=i;
+    order.sort((a,b)=>fitA[b]-fitA[a]);
+    neuro.gen++;neuro.evaluated+=popN*games;
+    let stepSum=0,appSum=0;
+    for(let i=0;i<popN;i++){stepSum+=stpA[i];appSum+=appA[i]}
+    const stepAvg=stepSum/popN,avgApples=appSum/popN;
+    neuro.stepAvg=neuro.stepAvg?neuro.stepAvg*0.7+stepAvg*0.3:stepAvg;
+    const top=order[0];
+    neuro.history.push({gen:neuro.gen,fit:fitA[top],apples:appA[top],avg:avgApples});
+    if(neuro.history.length>240)neuro.history.shift();
+    if(!neuro.best||fitA[top]>neuro.best.fit){
+      neuro.best={fit:fitA[top],apples:appA[top],gen:neuro.gen};
+    }
+    /* The brain actually used for live play always tracks the latest
+       generation, not just the historical best-fit one — otherwise a
+       plateaued or noisy run could keep feeding gameplay a stale snapshot
+       from many generations back even though training kept going. */
+    neuro.brain={hidden:cfg.hidden,weights:pop.slice(top*gl,top*gl+gl),gen:neuro.gen,apples:Math.round(appA[top]*10)/10,fitness:Math.round(fitA[top]),board:cfg.board};
+    /* Autosave serialises every weight to JSON and writes localStorage
+       synchronously; early on almost every generation is a new best, so this
+       was stuttering the page several times a second. Once every 5s is plenty
+       (and the final brain is saved when training stops). */
+    const now=performance.now();
+    if(neuro.autosave&&neuro.best.gen===neuro.gen&&now-(neuro.lastSave||0)>5000){neuro.lastSave=now;neuroSaveLocal(true)}
+    /* Stats + chart are redrawn at most 5x/sec instead of once per generation:
+       at a few hundred generations a second the UI work cost more than the
+       evolution itself. */
+    if(now-(neuro.lastRender||0)>200){neuro.lastRender=now;neuroRender(cfg,avgApples)}
+    /* next generation: elites are copied, the rest are bred straight into the
+       spare flat buffer — zero allocations per genome */
+    const eliteN=Math.max(1,Math.floor(popN*cfg.elite));
+    for(let i=0;i<eliteN;i++)next.set(pop.subarray(order[i]*gl,order[i]*gl+gl),i*gl);
+    for(let i=eliteN;i<popN;i++){
+      const a=tournament(fitA,popN,5),b=tournament(fitA,popN,5);
+      crossoverInto(next,i*gl,pop,a*gl,b*gl,gl);
+      mutateInPlace(next,i*gl,gl,cfg.mutRate,cfg.mutSize);
+    }
+    const swap=pop;pop=next;next=swap;
+    /* one macrotask yield every 8 generations is enough to keep the UI
+       responsive; yielding every generation cost a clamped timer (~4ms) on
+       every single generation, which dominated once generations got fast. */
+    if(neuro.gen%8===0)await new Promise(r=>setTimeout(r,0));
+  }
+  neuroKillPool();
+  neuro.training=false;
+  ui.nnStart.textContent="Start training";
+  ui.nnStart.classList.add("primary");
+  if(neuro.autosave&&neuro.brain)neuroSaveLocal(true);
+  neuroRender(cfg);
+}
+
+function updateAdvBrainState(){
+  try{ui.advBrainState.textContent=neuro.brain?("(gen "+(neuro.brain.gen||0)+" · "+(neuro.brain.apples||0)+" apples)"):"(no brain loaded)"}catch(e){}
+}
+function neuroRender(cfg,avg){
+  const h=neuro.history[neuro.history.length-1];
+  ui.nnGen.textContent=String(neuro.gen);
+  ui.nnBestApples.textContent=h?String(Math.round(h.apples*10)/10):"-";
+  ui.nnAvgApples.textContent=(avg!==undefined&&avg!==null)?String(Math.round(avg*10)/10):(h?String(Math.round(h.avg*10)/10):"-");
+  const secs=(performance.now()-neuro.started)/1000;
+  ui.nnRate.textContent=neuro.training&&secs>0?Math.round(neuro.evaluated/secs)+" games/s · "+(neuro.gamesEff||1)+"/genome":"idle";
+  ui.nnBrain.textContent=neuro.brain?("gen "+neuro.brain.gen+" · "+neuro.brain.apples+" apples · "+neuro.brain.hidden+"h"):"none loaded";
+  updateAdvBrainState();
+  neuroChart();
+}
+function neuroChart(){
+  const c=ui.nnChart,g=c.getContext("2d"),W=c.width,H=c.height;
+  g.clearRect(0,0,W,H);
+  g.fillStyle="#0d131b";g.fillRect(0,0,W,H);
+  const hist=neuro.history;if(hist.length<2)return;
+  const max=Math.max(1,...hist.map(p=>p.apples));
+  const px=i=>i/(hist.length-1)*(W-6)+3;
+  const py=v=>H-4-(v/max)*(H-10);
+  g.strokeStyle="#2dd4bf";g.lineWidth=2;g.beginPath();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.apples)):g.moveTo(px(i),py(p.apples)));g.stroke();
+  g.strokeStyle="#f59e0b88";g.lineWidth=1.5;g.beginPath();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.avg)):g.moveTo(px(i),py(p.avg)));g.stroke();
+  g.fillStyle="#8fa1b4";g.font="10px ui-monospace,monospace";
+  g.fillText("best "+Math.round(max*10)/10+" apples",6,12);
+}
+
+/* ---------- persistence ---------- */
 function brainToJSON(){
   if(!neuro.brain)return null;
   return JSON.stringify({
@@ -1649,113 +1978,151 @@ function brainToJSON(){
     weights:Array.from(neuro.brain.weights).map(v=>Math.round(v*1e5)/1e5),
   });
 }
-function updateAdvBrainState(){
-  try{
-    ui.advBrainState.textContent=neuro.brain
-      ? "(gen "+(neuro.brain.gen||0)+" · "+(neuro.brain.apples||0)+" apples)"
-      : "(no brain loaded)";
-  }catch(e){}
-}
-function renderBrainStatus(){
-  ui.nnBrain.textContent=neuro.brain
-    ? ("gen "+(neuro.brain.gen||0)+" · "+(neuro.brain.apples||0)+" apples · "+neuro.brain.hidden+"h")
-    : "none loaded";
-  updateAdvBrainState();
-}
 function brainFromJSON(text){
   const d=JSON.parse(text);
-  if(!d||!d.weights||!Number.isInteger(Number(d.hidden))||Number(d.hidden)<1)throw new Error("not a brain file");
-  if(d.inputs!==undefined&&Number(d.inputs)!==NEURO_IN)throw new Error("input count is incompatible");
-  if(d.outputs!==undefined&&Number(d.outputs)!==NEURO_OUT)throw new Error("output count is incompatible");
-  const hidden=Number(d.hidden);
-  if(d.weights.length!==geneLen(hidden))throw new Error("weight count does not match hidden size");
-  neuro.brain={
-    hidden,weights:Float32Array.from(d.weights),
-    gen:Number(d.gen)||0,apples:Number(d.apples)||0,
-    fitness:Number(d.fitness)||0,board:Number(d.board)||20
-  };
-  neuro.best={fit:neuro.brain.fitness,apples:neuro.brain.apples,gen:neuro.brain.gen};
-  renderBrainStatus();
+  if(!d||!d.weights||!d.hidden)throw new Error("not a brain file");
+  if(d.weights.length!==geneLen(d.hidden))throw new Error("weight count does not match hidden size");
+  neuro.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};
+  neuro.best={fit:d.fitness||0,apples:d.apples||0,gen:d.gen||0};
+  neuroRender();
 }
-function neuroToast(msg){
-  ui.nnStatus.textContent=msg;
-  clearTimeout(neuroToast.t);
-  neuroToast.t=setTimeout(()=>{ui.nnStatus.textContent=""},2600);
-}
+function neuroToast(msg){ui.nnStatus.textContent=msg;clearTimeout(neuroToast.t);neuroToast.t=setTimeout(()=>{ui.nnStatus.textContent=""},2600)}
 function neuroSaveLocal(quiet){
-  const json=brainToJSON();
-  if(!json){if(!quiet)neuroToast("no brain to save");return false}
-  try{
-    localStorage.setItem(NEURO_KEY,json);
-    if(!quiet)neuroToast("brain saved in this browser");
-    return true;
-  }catch(e){
-    if(!quiet)neuroToast("browser storage full — save a file instead");
-    return false;
-  }
+  const json=brainToJSON();if(!json){neuroToast("no brain to save");return}
+  try{localStorage.setItem(NEURO_KEY,json);if(!quiet)neuroToast("brain saved in this browser")}
+  catch(e){neuroToast("browser storage full — export a file instead")}
 }
 function neuroLoadLocal(quiet){
-  let raw=null;
-  try{raw=localStorage.getItem(NEURO_KEY)}catch(e){}
-  if(!raw){if(!quiet)neuroToast("nothing saved in this browser yet");return false}
+  const raw=localStorage.getItem(NEURO_KEY);
+  if(!raw){if(!quiet)neuroToast("nothing saved in this browser yet");return}
+  try{brainFromJSON(raw);if(!quiet)neuroToast("brain loaded from this browser")}catch(e){if(!quiet)neuroToast("saved brain is unreadable")}
+}
+function neuroSaveCfg(){
+  try{localStorage.setItem(NEURO_CFG_KEY,JSON.stringify({pop:ui.nnPop.value,hidden:ui.nnHidden.value,games:ui.nnGames.value,board:ui.nnBoard.value,mut:ui.nnMutRate.value,size:ui.nnMutSize.value,elite:ui.nnElite.value,workers:ui.nnWorkers.value,gens:ui.nnMaxGen.value,steps:ui.nnSteps.value}))}catch(e){}
+}
+function neuroLoadCfg(){
   try{
-    brainFromJSON(raw);
-    if(!quiet)neuroToast("brain loaded from browser storage");
-    return true;
-  }catch(e){
-    if(!quiet)neuroToast("saved brain is unreadable");
-    return false;
-  }
+    const d=JSON.parse(localStorage.getItem(NEURO_CFG_KEY)||"null");if(!d)return;
+    ui.nnPop.value=d.pop;ui.nnHidden.value=d.hidden;ui.nnGames.value=d.games;ui.nnBoard.value=d.board;
+    ui.nnMutRate.value=d.mut;ui.nnMutSize.value=d.size;ui.nnElite.value=d.elite;ui.nnWorkers.value=d.workers;
+    ui.nnMaxGen.value=d.gens;ui.nnSteps.value=d.steps;
+  }catch(e){}
 }
 async function neuroSaveFile(){
-  const json=brainToJSON();
-  if(!json){neuroToast("no brain to save");return}
+  const json=brainToJSON();if(!json){neuroToast("no brain to save");return}
   const name="snake-brain-gen"+(neuro.brain.gen||0)+".json";
   if(window.showSaveFilePicker){
     try{
-      const handle=neuro.fileHandle||await window.showSaveFilePicker({
-        suggestedName:name,
-        types:[{description:"Snake brain",accept:{"application/json":[".json"]}}]
-      });
+      const handle=neuro.fileHandle||await window.showSaveFilePicker({suggestedName:name,types:[{description:"Snake brain",accept:{"application/json":[".json"]}}]});
       neuro.fileHandle=handle;
-      const w=await handle.createWritable();
-      await w.write(json);await w.close();
+      const w=await handle.createWritable();await w.write(json);await w.close();
       neuroToast("written to "+handle.name);return;
-    }catch(e){if(e&&e.name==="AbortError")return}
+    }catch(e){if(e&&e.name==="AbortError")return;}
   }
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));
-  a.download=name;a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+  a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);
   neuroToast("downloaded "+name);
 }
 function neuroOpenFile(){
-  const inp=document.createElement("input");
-  inp.type="file";inp.accept=".json,application/json";
+  const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";
   inp.onchange=()=>{
     const f=inp.files&&inp.files[0];if(!f)return;
     const r=new FileReader();
-    r.onload=()=>{
-      try{brainFromJSON(String(r.result));neuroToast("loaded "+f.name)}
-      catch(e){neuroToast("could not read that brain file")}
-    };
+    r.onload=()=>{try{brainFromJSON(String(r.result));neuroToast("loaded "+f.name)}catch(e){neuroToast("could not read that file")}};
     r.readAsText(f);
   };
   inp.click();
 }
 
+/* ---------- wiring ---------- */
+function neuroSync(){
+  ui.nnPopOut.textContent=ui.nnPop.value;
+  ui.nnHiddenOut.textContent=ui.nnHidden.value;
+  ui.nnGamesOut.textContent=ui.nnGames.value;
+  ui.nnMutRateOut.textContent=ui.nnMutRate.value+"%";
+  ui.nnMutSizeOut.textContent=(Number(ui.nnMutSize.value)/100).toFixed(2);
+  ui.nnEliteOut.textContent=ui.nnElite.value+"%";
+  ui.nnWorkersOut.textContent=ui.nnWorkers.value;
+  ui.nnStepsOut.textContent=ui.nnSteps.value;
+  neuroSaveCfg();
+}
+["nnPop","nnHidden","nnGames","nnMutRate","nnMutSize","nnElite","nnWorkers","nnSteps"].forEach(k=>{
+  ui[k].addEventListener("input",neuroSync);
+});
+ui.nnBoard.onchange=neuroSaveCfg;ui.nnMaxGen.onchange=neuroSaveCfg;
+ui.nnWorkers.max=String(Math.max(2,Math.min(32,(navigator.hardwareConcurrency||4)*2)));
+// leave a core for the UI thread and never oversubscribe small devices
+ui.nnWorkers.value=String(Math.max(1,navigator.hardwareConcurrency||4));
+/* ---------- screen wake lock (keep display on while training overnight) ---------- */
+let wakeLock=null,noSleepVideo=null;
+// Tiny silent looping video: the Wake Lock API is unavailable in insecure
+// contexts and in iframes without the screen-wake-lock permission, but a
+// playing video keeps the display awake on every major browser.
+const NO_SLEEP_WEBM="data:video/webm;base64,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";
+const NO_SLEEP_SRC="data:video/mp4;base64,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";
+function noSleepStart(){
+  try{
+    if(!noSleepVideo){
+      const v=document.createElement("video");
+      v.setAttribute("playsinline","");v.muted=true;v.loop=true;
+      v.style.cssText="position:fixed;width:1px;height:1px;opacity:0.01;pointer-events:none;left:0;bottom:0";
+      v.innerHTML='<source src="'+NO_SLEEP_WEBM+'" type="video/webm"><source src="'+NO_SLEEP_SRC+'" type="video/mp4">';
+      document.body.appendChild(v);
+      noSleepVideo=v;
+    }
+    const pr=noSleepVideo.play();
+    if(pr&&pr.catch)pr.catch(()=>{});
+  }catch(e){}
+}
+function noSleepStop(){if(noSleepVideo){try{noSleepVideo.pause()}catch(e){}}}
+async function wakeLockAcquire(){
+  noSleepStart();
+  if(!("wakeLock" in navigator)||!window.isSecureContext){neuroToast("keeping the screen awake with a fallback — your browser blocks the wake lock API");return}
+  try{
+    wakeLock=await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release",()=>{wakeLock=null});
+    neuroToast("screen will stay on while training");
+  }catch(e){neuroToast("screen wake lock blocked here — using fallback instead")}
+}
+function wakeLockRelease(){
+  noSleepStop();
+  if(wakeLock){const w=wakeLock;wakeLock=null;w.release().catch(()=>{})}
+}
+// the OS/browser force-releases the lock whenever the tab is hidden, so
+// grab it again the moment it's visible if training is still going.
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"&&neuro.training)wakeLockAcquire();
+});
+
+ui.nnStart.onclick=()=>{
+  if(neuro.training){neuro.training=false;ui.nnStart.textContent="Stopping…";return}
+  neuro.training=true;neuro.best=null;
+  ui.nnStart.textContent="Stop training";ui.nnStart.classList.remove("primary");
+  wakeLockAcquire();
+  neuroTrain().catch(e=>{console.error(e);neuro.training=false;neuroKillPool();ui.nnStart.textContent="Start training";ui.nnStart.classList.add("primary");neuroToast("training failed: "+e.message)}).finally(wakeLockRelease);
+};
 ui.nnSave.onclick=()=>neuroSaveLocal(false);
 ui.nnLoad.onclick=()=>neuroLoadLocal(false);
 ui.nnExport.onclick=neuroSaveFile;
 ui.nnImport.onclick=neuroOpenFile;
-ui.nnClear.onclick=()=>{
-  try{localStorage.removeItem(NEURO_KEY)}catch(e){}
-  neuro.brain=null;neuro.best=null;
-  renderBrainStatus();neuroToast("saved brain deleted");
+ui.nnClear.onclick=()=>{localStorage.removeItem(NEURO_KEY);neuro.brain=null;neuro.best=null;neuroRender();neuroToast("saved brain deleted")};
+ui.nnAutosave.onchange=()=>{neuro.autosave=ui.nnAutosave.checked};
+ui.nnGuard.onchange=()=>{neuro.guard=ui.nnGuard.checked};
+ui.nnReset.onclick=()=>{
+  ui.nnPop.value=NN_DEFAULTS.pop;ui.nnHidden.value=NN_DEFAULTS.hidden;ui.nnGames.value=NN_DEFAULTS.games;
+  ui.nnMutRate.value=NN_DEFAULTS.mutRate;ui.nnMutSize.value=NN_DEFAULTS.mutSize;ui.nnElite.value=NN_DEFAULTS.elite;
+  ui.nnSteps.value=NN_DEFAULTS.steps;ui.nnBoard.value=NN_DEFAULTS.board;ui.nnMaxGen.value=NN_DEFAULTS.maxGen;
+  ui.nnWorkers.value=String(Math.max(1,navigator.hardwareConcurrency||4));
+  ui.nnSeedBest.checked=NN_DEFAULTS.seedBest;ui.nnAutosave.checked=NN_DEFAULTS.autosave;ui.nnGuard.checked=NN_DEFAULTS.guard;
+  neuro.autosave=NN_DEFAULTS.autosave;neuro.guard=NN_DEFAULTS.guard;
+  neuroSync();neuroToast("training settings reset to defaults");
 };
-neuroLoadLocal(true);
-renderBrainStatus();
-advSync();
+ui.nnUse.onclick=()=>{ui.algorithm.value="neuro";competition=false;ai=true;if(game){game.alg="neuro";game.path=[]}updateUi()};
+neuroLoadCfg();neuroSync();neuroLoadLocal(true);neuroRender();
+
+game=newState(Number(ui.size.value),ui.algorithm.value);ensureApples(game);
+ui.high.textContent=high;updateUi();draw();requestAnimationFrame(loop);
 })();
 </script>
 </body>
