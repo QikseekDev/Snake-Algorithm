@@ -724,7 +724,16 @@ async function train(){
   }else{
     for(let i=0;i<cfg.pop;i++)pop.push(randomGenome(gl));
   }
-  state.gen=(seeded?(state.brain.gen||0):0);state.history=[];state.started=performance.now();state.evaluated=0;state.stepAvg=0;state.gamesEff=cfg.games;state.staleGens=0;state.evalMsEma=0;state.champIdx=seeded?0:-1;state.best=null;state.champEma=undefined;state.goodBase=null;state.holdChecks=0;
+  state.gen=(seeded?(state.brain.gen||0):0);state.history=[];state.started=performance.now();state.evaluated=0;state.stepAvg=0;state.gamesEff=cfg.games;state.staleGens=0;state.evalMsEma=0;state.champIdx=seeded?0:-1;
+  /* Seed state.best from the loaded brain's own recorded fitness on a
+     resumed run, instead of leaving it null. Left null, the very first
+     generation's re-scored champion almost never beats itself by the full
+     verification margin (it's just noise around the same score), so no
+     record would land — and state.best.fit a few lines below would then
+     throw on a null, crashing the whole run with "Cannot read properties
+     of null (reading 'fit')" right after clicking Start. */
+  state.best=seeded?{fit:state.brain.fitness||0,apples:state.brain.apples||0,gen:state.gen}:null;
+  state.champEma=undefined;state.goodBase=null;state.holdChecks=0;
   let lastGenTime=performance.now();
 
   while(state.training&&(cfg.maxGen===0||state.gen<cfg.maxGen)){
