@@ -82,8 +82,8 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
         <label>CPU workers <b id="oWorkers">8</b><input id="workers" type="range" min="0" max="32" step="1" value="8"></label>
         <label>Stop at gen (0=∞) <b id="oMaxGen">0</b><input id="maxGen" type="range" min="0" max="5000" step="50" value="0"></label>
       </div>
-      <label>GPU usage <b id="oGpu">auto</b><input id="gpu" type="range" min="0" max="100" step="5" value="101"></label>
-      <p class="sub" style="font-size:12px">GPU usage at max = auto-balance: the trainer measures both backends every generation and gives each the share it can actually chew through.</p>
+      <label>GPU usage <b id="oGpu">100%</b><input id="gpu" type="range" min="0" max="100" step="5" value="100"></label>
+      <p class="sub" style="font-size:12px">100% runs everything on the GPU (fastest when a GPU is available). Lower it to offload some genomes to CPU workers — useful mainly when the GPU is memory-limited or busy elsewhere.</p>
     </div>
   </div>
 </div>
@@ -531,14 +531,14 @@ async function evaluate(pop,cfg,gl,seed){
   const fit=new Float32Array(pop.length),app=new Float32Array(pop.length),stp=new Float32Array(pop.length);
   const manual=+$("gpu").value;
   let share=0;
-  if(gpu.ok&&state.pool.length===0)share=1;
+  /* GPU-only by default: splitting a slice to CPU workers costs a
+     postMessage + Promise.all round trip every generation, and on this
+     workload the GPU is fast enough that the CPU's contribution never
+     earns back that overhead — so unless the person explicitly dials
+     the GPU-usage slider down, run everything on the GPU. */
+  if(gpu.ok&&(state.pool.length===0||manual>=100))share=1;
   else if(!gpu.ok)share=0;
-  else if(manual<=100)share=manual/100;
-  else{
-    const g=state.gpuRate||1,c=state.cpuRate||1;
-    share=g/(g+c);
-    share=Math.min(0.97,Math.max(0.03,share));
-  }
+  else share=manual/100;
   state.gpuShare=share;
   let nGpu=Math.round(pop.length*share);
   if(!gpu.ok)nGpu=0;
@@ -578,7 +578,14 @@ async function evaluate(pop,cfg,gl,seed){
 async function train(){
   const cfg=cfgRead();
   const gl=geneLen(cfg.hidden);
-  spawnPool(gpu.ok?Math.max(0,cfg.workers):Math.max(1,cfg.workers));
+  /* Only spin up CPU workers when they'll actually do something: pure
+     GPU-only runs (the default) skip worker creation entirely, and the
+     split is fixed for the whole run — change the sliders and restart
+     to pick up a new value, same as pop/hidden/etc. Re-checking and
+     respawning workers every generation was the source of the extra
+     lag, so that's gone. */
+  const needsCpu=!gpu.ok||(+$("gpu").value)<100;
+  spawnPool(needsCpu?Math.max(1,cfg.workers):0);
   let pop=[];
   if(state.brain&&state.brain.hidden===cfg.hidden){
     pop.push(new Float32Array(state.brain.weights));
@@ -628,6 +635,7 @@ async function train(){
     await new Promise(r=>setTimeout(r,0));
   }
   killPool();
+  releaseWakeLock();
   state.training=false;
   $("start").textContent="Start training";
   $("start").classList.add("primary");
@@ -674,21 +682,71 @@ function brainToJSON(){
   });
 }
 
+/* =========================================================
+   Wake lock — keeps the screen on while training runs.
+   Uses the native Screen Wake Lock API when available; falls
+   back to a hidden looping canvas-captured video otherwise
+   (works around iOS Safari and other browsers lacking the API).
+   ========================================================= */
+let wakeLock=null,noSleepVideo=null,noSleepActive=false;
+function startNoSleepVideo(){
+  if(noSleepActive)return;
+  try{
+    if(!noSleepVideo){
+      const canvas=document.createElement("canvas");
+      canvas.width=canvas.height=1;
+      canvas.getContext("2d").fillRect(0,0,1,1);
+      if(!canvas.captureStream){log("wake lock fallback unavailable (captureStream unsupported)");return}
+      const stream=canvas.captureStream(1);
+      const v=document.createElement("video");
+      v.muted=true;v.setAttribute("muted","");v.playsInline=true;v.setAttribute("playsinline","");v.loop=true;
+      v.style.position="fixed";v.style.width="1px";v.style.height="1px";v.style.opacity="0";v.style.pointerEvents="none";
+      v.srcObject=stream;
+      document.body.appendChild(v);
+      noSleepVideo=v;
+    }
+    noSleepVideo.play().then(()=>{noSleepActive=true;log("wake lock fallback active (hidden video)")}).catch(()=>{log("wake lock fallback video blocked by browser")});
+  }catch(e){log("wake lock fallback failed: "+e.message)}
+}
+function stopNoSleepVideo(){
+  if(!noSleepVideo)return;
+  try{noSleepVideo.pause()}catch(e){}
+  noSleepActive=false;
+}
+async function acquireWakeLock(){
+  if("wakeLock" in navigator){
+    try{
+      wakeLock=await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release",()=>{wakeLock=null});
+      log("screen wake lock acquired");
+      return;
+    }catch(e){log("wake lock request failed ("+e.message+") — using fallback")}
+  }
+  startNoSleepVideo();
+}
+function releaseWakeLock(){
+  if(wakeLock){try{wakeLock.release()}catch(e){}wakeLock=null}
+  stopNoSleepVideo();
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"&&state.training&&!wakeLock)acquireWakeLock();
+});
+
 ["pop","hid","games","steps","board","elite","mutR","mutS","workers","maxGen"].forEach(k=>{
   const cap=k.charAt(0).toUpperCase()+k.slice(1);
   const out=$("o"+cap);
   const sync=()=>{out.textContent=$(k).value};
   $(k).addEventListener("input",sync);sync();
 });
-$("gpu").addEventListener("input",()=>{const v=+$("gpu").value;$("oGpu").textContent=v>100?"auto":v+"%"});
-$("oGpu").textContent="auto";
+$("gpu").addEventListener("input",()=>{$("oGpu").textContent=$("gpu").value+"%"});
 
 $("start").onclick=()=>{
   if(state.training){state.training=false;$("start").textContent="Stopping…";return}
   state.training=true;state.best=null;state.gpuRate=0;state.cpuRate=0;state.gps=0;
   $("start").textContent="Stop training";$("start").classList.remove("primary");
   log("training started · pop "+$("pop").value+" · "+$("hid").value+" hidden · "+($("workers").value)+" workers"+(gpu.ok?" + GPU":""));
-  train().catch(e=>{console.error(e);state.training=false;killPool();$("start").textContent="Start training";$("start").classList.add("primary");log("training failed: "+e.message)});
+  acquireWakeLock();
+  train().catch(e=>{console.error(e);state.training=false;killPool();releaseWakeLock();$("start").textContent="Start training";$("start").classList.add("primary");log("training failed: "+e.message)});
 };
 $("download").onclick=()=>{
   const json=brainToJSON();if(!json){log("no brain yet — train first");return}
