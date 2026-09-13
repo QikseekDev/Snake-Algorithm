@@ -50,8 +50,8 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
       <h2>Progress</h2>
       <div class="stats">
         <div class="stat"><span>Generation</span><strong id="sGen">0</strong></div>
-        <div class="stat"><span>Best apples</span><strong id="sBest">-</strong></div>
-        <div class="stat"><span>Average apples</span><strong id="sAvg">-</strong></div>
+        <div class="stat"><span>Best AI score</span><strong id="sBest">-</strong></div>
+        <div class="stat"><span>Average AI score</span><strong id="sAvg">-</strong></div>
         <div class="stat"><span>Games / sec</span><strong id="sRate">idle</strong></div>
         <div class="stat"><span>GPU share</span><strong id="sSplit">-</strong></div>
         <div class="stat"><span>Gens / sec</span><strong id="sGps">-</strong></div>
@@ -739,7 +739,8 @@ async function train(){
     state.stepAvg=state.stepAvg?state.stepAvg*0.7+stepAvg*0.3:stepAvg;
     const top=ranked[0];
     const avgApples=ranked.reduce((s,r)=>s+r.apples,0)/ranked.length;
-    state.history.push({gen:state.gen,fit:top.fit,apples:top.apples,avg:avgApples});
+    const avgFit=ranked.reduce((s,r)=>s+r.fit,0)/ranked.length;
+    state.history.push({gen:state.gen,fit:top.fit,apples:top.apples,avg:avgApples,avgFit:avgFit});
     if(state.history.length>360)state.history.shift();
     /* The champion is re-scored every generation (it sits at index 0 of the
        population), so its record is refreshed against the games everyone
@@ -786,52 +787,66 @@ async function train(){
         }
       }
 
-      /* Auto-Turbo: also tune Elite %, Mutation % and Mutation size toward
-         whatever keeps the snake actually getting smarter, not just
-         whatever runs fastest. Two signals, checked every few generations
-         so a single noisy generation can't swing it:
-           - staleGens: generations since the last new all-time-best genome
-           - trend: slope of the average-apples line over the last 8
-             generations — the same "avg" line the chart plots, so this is
-             literally "is the graph going higher right now"
-         Only eases toward exploitation (less mutation, more elitism) when
-         BOTH a new best just landed AND the average-apples trend is
-         actually rising — a lone lucky best with a flat/falling average
-         doesn't count as progress worth locking in. Either stalling for a
-         while OR a non-rising trend pushes back toward exploration.
-         Elitism (top genomes copied through unmutated every generation)
-         is what makes this safe to push hard: the best genome found so
-         far always survives intact, so aggressive mutation can only add
-         new candidates, never destroy the current best. */
+      /* Auto-Turbo: actively push the population out of plateaus.
+         A flat best line can happen when the population converges around a
+         local optimum. In that case we deliberately increase mutation
+         strength/rate and temporarily reduce elitism. Once the average
+         fitness starts climbing again, mutation is eased back so the new
+         behavior can stabilize. */
       if(state.gen%4===0){
-        /* Bounded, mean-reverting tuning. The old version only eased off
-           when a brand-new best had just landed AND the trend was rising,
-           so in practice mutation ratcheted to the slider's maximum and
-           elitism to its minimum, which destroyed the population and made
-           both chart lines fall. Now: mutation stays inside a sane band,
-           elitism never drops below a floor, and both drift back toward
-           their baseline whenever nothing conclusive is happening. */
-        const mutRmin=2,mutRmax=22,mutSmin=4,mutSmax=40;
-        const eliteFloor=Math.max(+$("elite").min,4),eliteCeil=Math.min(+$("elite").max,20);
+        const mutRmin=2,mutRmax=35,mutSmin=4,mutSmax=60;
+        const eliteFloor=Math.max(+$("elite").min,3),eliteCeil=Math.min(+$("elite").max,20);
         const base={mutR:6,mutS:18,elite:8};
         let mutR=+$("mutR").value,mutS=+$("mutS").value,eliteV=+$("elite").value;
+
+        const hist=state.history;
         const stale=state.staleGens||0;
-        const hist=state.history,win=12;
-        const trend=hist.length>win?(hist[hist.length-1].avg-hist[hist.length-1-win].avg):0;
-        const toward=(v,t,step)=>v===t?v:(v<t?Math.min(t,v+step):Math.max(t,v-step));
+        const win=Math.min(16,Math.max(4,hist.length-1));
+        const recent=hist.length>win?hist.slice(hist.length-win):hist;
+        const older=hist.length>win?hist.slice(Math.max(0,hist.length-win*2),hist.length-win):[];
+        const recentAvg=recent.length?recent.reduce((s,p)=>s+p.avgFit,0)/recent.length:0;
+        const olderAvg=older.length?older.reduce((s,p)=>s+p.avgFit,0)/older.length:recentAvg;
+        const avgTrend=recentAvg-olderAvg;
+
         let mode="hold";
-        if(stale>=20&&trend<=0.02)mode="explore";
-        else if(trend>0.05)mode="exploit";
-        if(mode==="explore"){mutR=Math.min(mutRmax,mutR+1);mutS=Math.min(mutSmax,mutS+2);eliteV=Math.max(eliteFloor,eliteV-1)}
-        else if(mode==="exploit"){mutR=Math.max(mutRmin,mutR-1);mutS=Math.max(mutSmin,mutS-2);eliteV=Math.min(eliteCeil,eliteV+1)}
-        else{mutR=toward(mutR,base.mutR,1);mutS=toward(mutS,base.mutS,2);eliteV=toward(eliteV,base.elite,1)}
+
+        // Escalate progressively instead of waiting forever at one mutation
+        // setting. The farther we are into a plateau, the harder we explore.
+        if(stale>=12 && avgTrend<=0.01)mode="explore";
+        if(stale>=30 && avgTrend<=0.02)mode="escape";
+        else if(avgTrend>0.08)mode="exploit";
+
+        if(mode==="escape"){
+          mutR=Math.min(mutRmax,mutR+3);
+          mutS=Math.min(mutSmax,mutS+5);
+          eliteV=Math.max(eliteFloor,eliteV-1);
+        }else if(mode==="explore"){
+          mutR=Math.min(mutRmax,mutR+2);
+          mutS=Math.min(mutSmax,mutS+3);
+          eliteV=Math.max(eliteFloor,eliteV-1);
+        }else if(mode==="exploit"){
+          mutR=Math.max(mutRmin,mutR-1);
+          mutS=Math.max(mutSmin,mutS-2);
+          eliteV=Math.min(eliteCeil,eliteV+1);
+        }else{
+          const toward=(v,t,step)=>v===t?v:(v<t?Math.min(t,v+step):Math.max(t,v-step));
+          mutR=toward(mutR,base.mutR,1);
+          mutS=toward(mutS,base.mutS,2);
+          eliteV=toward(eliteV,base.elite,1);
+        }
+
         mutR=Math.min(mutRmax,Math.max(mutRmin,mutR));
         mutS=Math.min(mutSmax,Math.max(mutSmin,mutS));
         eliteV=Math.min(eliteCeil,Math.max(eliteFloor,eliteV));
+
         if(mutR!==Math.round(cfg.mutRate*100)||mutS!==Math.round(cfg.mutSize*100)||eliteV!==Math.round(cfg.elite*100)){
           cfg.mutRate=mutR/100;cfg.mutSize=mutS/100;cfg.elite=eliteV/100;
           setSlider("mutR",mutR);setSlider("mutS",mutS);setSlider("elite",eliteV);
-          log("auto-turbo: mutation "+mutR+"%/"+mutS+"% · elite "+eliteV+"% (avg-apples trend "+(trend>=0?"+":"")+Math.round(trend*100)/100+", "+(mode==="explore"?"stalled "+stale+" gens → exploring more":mode==="exploit"?"graph climbing → converging":"steady → easing back to baseline")+")");
+          log("auto-turbo: mutation "+mutR+"%/"+mutS+"% · elite "+eliteV+"% ("+
+              (mode==="escape"?"plateau "+stale+" gens → HARD ESCAPE":
+               mode==="explore"?"plateau "+stale+" gens → exploring":
+               mode==="exploit"?"average fitness rising → stabilizing":"steady → baseline")+
+              ", avg fitness trend "+(avgTrend>=0?"+":"")+Math.round(avgTrend*100)/100+")");
         }
       }
     }
@@ -866,8 +881,8 @@ async function train(){
 function render(avg){
   const h=state.history[state.history.length-1];
   $("sGen").textContent=String(state.gen);
-  $("sBest").textContent=h?String(Math.round(h.apples*10)/10):"-";
-  $("sAvg").textContent=(avg!==undefined)?String(Math.round(avg*10)/10):(h?String(Math.round(h.avg*10)/10):"-");
+  $("sBest").textContent=h?String(Math.round(h.fit*10)/10):"-";
+  $("sAvg").textContent=h?String(Math.round(h.avgFit*10)/10):"-";
   const secs=(performance.now()-state.started)/1000;
   $("sRate").textContent=state.training&&secs>0?Math.round(state.evaluated/secs).toLocaleString()+" ("+state.gamesEff+"/genome)":"idle";
   $("sSplit").textContent=gpu.ok?Math.round(state.gpuShare*100)+"% GPU / "+(100-Math.round(state.gpuShare*100))+"% CPU"+($("autoSplit").checked?" (auto)":""):"CPU only";
@@ -878,15 +893,33 @@ function chart(){
   const c=$("chart"),g=c.getContext("2d"),W=c.width,H=c.height;
   g.fillStyle="#0d131b";g.fillRect(0,0,W,H);
   const hist=state.history;if(hist.length<2)return;
-  const max=Math.max(1,...hist.map(p=>p.apples));
+
+  const vals=hist.flatMap(p=>[p.fit,p.avgFit]);
+  let min=Math.min(...vals),max=Math.max(...vals);
+  if(!Number.isFinite(min)||!Number.isFinite(max))return;
+  if(min===max){min-=1;max+=1}
+  const pad=(max-min)*0.08;
+  min-=pad;max+=pad;
+
   const px=i=>i/(hist.length-1)*(W-12)+6;
-  const py=v=>H-8-(v/max)*(H-24);
-  g.strokeStyle="#2dd4bf";g.lineWidth=3;g.beginPath();
-  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.apples)):g.moveTo(px(i),py(p.apples)));g.stroke();
+  const py=v=>H-8-((v-min)/(max-min))*(H-24);
+
+  // Zero line when the fitness scale crosses zero.
+  if(min<0&&max>0){
+    g.strokeStyle="#263241";g.lineWidth=1;g.beginPath();
+    g.moveTo(6,py(0));g.lineTo(W-6,py(0));g.stroke();
+  }
+
+  // Average population fitness.
   g.strokeStyle="#f59e0b99";g.lineWidth=2;g.beginPath();
-  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.avg)):g.moveTo(px(i),py(p.avg)));g.stroke();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.avgFit)):g.moveTo(px(i),py(p.avgFit)));g.stroke();
+
+  // Best fitness / champion progress.
+  g.strokeStyle="#2dd4bf";g.lineWidth=3;g.beginPath();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.fit)):g.moveTo(px(i),py(p.fit)));g.stroke();
+
   g.fillStyle="#8fa1b4";g.font="18px ui-monospace,monospace";
-  g.fillText("best "+Math.round(max*10)/10+" apples  ·  gen "+state.gen,12,26);
+  g.fillText("AI performance · best "+Math.round(hist[hist.length-1].fit*10)/10+" score · gen "+state.gen,12,26);
 }
 function brainToJSON(){
   if(!state.brain)return null;
