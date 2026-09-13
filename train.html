@@ -90,6 +90,11 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
         <label>CPU workers <b id="oWorkers">8</b><input id="workers" type="range" min="0" max="32" step="1" value="8"></label>
         <label>Stop at gen (0=∞) <b id="oMaxGen">0</b><input id="maxGen" type="range" min="0" max="5000" step="50" value="0"></label>
       </div>
+      <label style="display:flex;align-items:center;flex-direction:row;gap:8px;margin-bottom:6px">
+        <input id="autoSteps" type="checkbox" style="width:16px;height:16px;margin:0">
+        <b style="color:var(--text);text-transform:none;letter-spacing:normal;font-size:13px">Auto-adjust move limit</b>
+      </label>
+      <p class="sub" style="font-size:12px" id="stepsHelp">Off by default — including in Auto-Turbo — since it changes the scoring conditions mid-run. Turn it on to let the move limit self-tune every few generations: if snakes are routinely surviving all the way to the cap, it's raised so long-lived snakes aren't cut off before showing their real ceiling; if snakes are dying well short of it, it's lowered so generations spend less time simulating moves nobody reaches.</p>
       <label>GPU usage <b id="oGpu">50%</b><input id="gpu" type="range" min="0" max="100" step="5" value="50"></label>
       <label style="display:flex;align-items:center;flex-direction:row;gap:8px;margin-bottom:6px">
         <input id="autoSplit" type="checkbox" style="width:16px;height:16px;margin:0">
@@ -765,6 +770,33 @@ async function train(){
     state.gen++;state.evaluated+=pop.length*games;
     const stepAvg=ranked.reduce((s,r)=>s+r.steps,0)/ranked.length;
     state.stepAvg=state.stepAvg?state.stepAvg*0.7+stepAvg*0.3:stepAvg;
+    /* Optional auto move-limit: off by default (even under Auto-Turbo) since
+       it changes the scoring conditions mid-run, but if the user opts in,
+       nudge the cap every few generations based on who's actually reaching
+       it. Judge "raise" off the top slice (are the best genomes getting
+       truncated before showing their real ceiling?) and "lower" off the
+       whole population (is basically nobody, including the best, using the
+       current cap, so moves are being wasted on a limit that never binds?).
+       Checked every 5th generation rather than every generation so it reacts
+       to a real trend, not one noisy batch of games. */
+    if($("autoSteps").checked&&state.gen>3&&state.gen%5===0){
+      const stepsMin=+$("steps").min,stepsMax=+$("steps").max,stepsStep=+$("steps").step;
+      const eliteSlice=Math.max(1,Math.floor(ranked.length*0.1));
+      const topStepAvg=ranked.slice(0,eliteSlice).reduce((s,r)=>s+r.steps,0)/eliteSlice;
+      const topRatio=topStepAvg/cfg.maxSteps;
+      const popRatio=state.stepAvg/cfg.maxSteps;
+      let newSteps=cfg.maxSteps;
+      if(topRatio>0.85)newSteps=Math.min(stepsMax,Math.round(cfg.maxSteps*1.25/stepsStep)*stepsStep);
+      else if(popRatio<0.35)newSteps=Math.max(stepsMin,Math.round(cfg.maxSteps*0.85/stepsStep)*stepsStep);
+      if(newSteps!==cfg.maxSteps){
+        const raising=newSteps>cfg.maxSteps;
+        log("auto move-limit: "+(raising?"raising":"lowering")+" to "+newSteps+" ("+
+            (raising?"top genomes averaging "+Math.round(topStepAvg):"population averaging "+Math.round(state.stepAvg))+
+            "/"+cfg.maxSteps+" steps)");
+        cfg.maxSteps=newSteps;
+        setSlider("steps",newSteps);
+      }
+    }
     const top=ranked[0];
     const avgApples=ranked.reduce((s,r)=>s+r.apples,0)/ranked.length;
     const avgFit=ranked.reduce((s,r)=>s+r.fit,0)/ranked.length;
@@ -891,7 +923,7 @@ async function train(){
          snapping back — a genome or two of slower-but-real progress is
          never mistaken for "done". */
       if(state.gen%4===0){
-        const mutRmin=2,mutRmax=35,mutSmin=4,mutSmax=60;
+        const mutRmin=2,mutRmax=48,mutSmin=4,mutSmax=85;
         const eliteFloor=Math.max(+$("elite").min,5),eliteCeil=Math.min(+$("elite").max,20);
         /* "Baseline" here isn't a fixed constant — it's whatever mutation/
            elite combo was active the last time the population actually
@@ -930,15 +962,16 @@ async function train(){
         }else if(stale>HOLD_GRACE){
           // No new champion for a while now, well past the grace period —
           // keep pushing, harder the longer it's been stuck. `intensity`
-          // climbs with staleness (capped for safety), so this never just
-          // holds a fixed elevated setting: as long as the score isn't
-          // improving, the pressure keeps building generation over
-          // generation.
+          // climbs with staleness and now ramps faster and reaches a higher
+          // ceiling than before, so a short plateau still gets a gentle
+          // nudge but a genuinely long one escalates a lot further instead
+          // of flattening out early: as long as the score isn't improving,
+          // the pressure keeps building generation over generation.
           mode="push";
-          const intensity=Math.min(6,1+Math.floor((stale-HOLD_GRACE)/20));
+          const intensity=Math.min(11,1+Math.floor((stale-HOLD_GRACE)/12));
           mutR=Math.min(mutRmax,mutR+intensity);
           mutS=Math.min(mutSmax,mutS+intensity*2);
-          eliteV=Math.max(eliteFloor,eliteV-1);
+          eliteV=Math.max(eliteFloor,eliteV-Math.ceil(intensity/3));
         }else if(stale>0){
           // Within the grace period — hold everything exactly where it is
           // and just keep watching. No slider changes, no ratcheting.
@@ -993,9 +1026,14 @@ async function train(){
        a new record in a very long time, the whole population is probably
        stuck in the same basin — mutating existing lineages harder just
        reshuffles the same genes. A trickle of fully fresh random genomes
-       each generation gives real, unrelated genetic material a chance to
-       out-compete the stuck lineage instead. */
-    const freshN=(state.staleGens||0)>150?Math.max(2,Math.floor(cfg.pop*0.02)):0;
+       gives real, unrelated genetic material a chance to out-compete the
+       stuck lineage instead — and that trickle keeps growing the longer the
+       stall runs, from a light 2% dusting right after the threshold up to a
+       much heavier 15% flood if the score truly hasn't budged in ages,
+       rather than settling at one fixed rate forever. */
+    const staleGens=state.staleGens||0;
+    const freshFrac=staleGens>150?Math.min(0.15,0.02+(staleGens-150)/300*0.13):0;
+    const freshN=freshFrac>0?Math.max(2,Math.floor(cfg.pop*freshFrac)):0;
     for(let i=0;i<freshN&&next.length<cfg.pop;i++)next.push(randomGenome(gl));
 
     /* Only a slice of each new generation actually breeds at the elevated
@@ -1146,6 +1184,14 @@ $("autoSplit").addEventListener("change",()=>{
   const on=$("autoSplit").checked;
   $("gpu").disabled=on;
   $("gpu").style.opacity=on?0.4:1;
+});
+$("autoSteps").addEventListener("change",()=>{
+  const on=$("autoSteps").checked;
+  $("steps").disabled=on;
+  $("steps").style.opacity=on?0.4:1;
+  const lbl=$("steps").closest("label");
+  if(lbl)lbl.classList.toggle("locked",on);
+  log(on?"auto move-limit enabled — the move-limit slider will self-tune during training":"auto move-limit disabled — move limit is fixed at "+$("steps").value);
 });
 
 /* Programmatically set a slider + its readout label together (used by
