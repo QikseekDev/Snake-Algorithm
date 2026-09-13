@@ -382,7 +382,7 @@ fn main(@builtin(global_invocation_id) gid:vec3<u32>){
 }
 `;
 
-const gpu={ok:false,device:null,pipeline:null,layout:null,uni:null,wBuf:0,rBuf:0,readBuf:0,wSize:0,rSize:0,key:""};
+const gpu={ok:false,device:null,pipeline:null,layout:null,uni:null,wBuf:0,rBuf:0,readBuf:0,wSize:0,rSize:0,key:"",retries:0};
 
 async function gpuInit(){
   if(!navigator.gpu) return "no WebGPU in this browser";
@@ -397,7 +397,7 @@ async function gpuInit(){
     }});
   }catch(e){ try{ device=await adapter.requestDevice(); }catch(e2){ return "device request failed" } }
   if(!device) return "device request failed";
-  device.lost.then(info=>{ if(info.reason!=="destroyed"){ gpu.ok=false; log("GPU lost ("+info.reason+") — continuing on CPU only"); }});
+  device.lost.then(info=>{ if(info.reason!=="destroyed")handleGpuLoss(info.reason); });
   const module=device.createShaderModule({code:WGSL});
   const info=await module.getCompilationInfo?.();
   if(info&&info.messages.some(m=>m.type==="error")){
@@ -410,6 +410,56 @@ async function gpuInit(){
   gpu.info=(adapter.info&&(adapter.info.vendor||adapter.info.architecture))?[adapter.info.vendor,adapter.info.architecture,adapter.info.device].filter(Boolean).join(" "):"WebGPU device";
   gpu.maxStorage=device.limits.maxStorageBufferBindingSize;
   return null;
+}
+
+/* =========================================================
+   GPU loss recovery — a lost device (driver reset, tab backgrounded
+   too long, browser OOM-killing the GPU process, etc.) used to require
+   a full page reload to get GPU compute back, since gpu.ok just stuck
+   at false forever. Now: any loss (from the device.lost promise, or a
+   pass that throws mid-run) tears down the old device's now-invalid
+   buffers, makes sure CPU workers exist to cover the load in the
+   meantime, and retries gpuInit() on a backoff — all without touching
+   whatever generation is currently training. */
+let gpuRetryTimer=null;
+function handleGpuLoss(reason){
+  if(!gpu.ok&&gpuRetryTimer)return; // already mid-recovery, nothing new to do
+  gpu.ok=false;
+  log("GPU lost ("+reason+") — continuing on CPU only, will try to recover…");
+  renderCaps();
+  if(state.training&&!state.pool.length){
+    const n=Math.max(1,state._lastWorkers||navigator.hardwareConcurrency||4);
+    spawnPool(n);
+    log("spun up "+n+" CPU worker(s) to cover the work the GPU was doing");
+  }
+  scheduleGpuRecovery();
+}
+async function gpuReinit(){
+  /* the old device's buffers/pipeline/bind-group are tied to the dead
+     device and unusable with a new one — drop them so gpuEnsureBuffers
+     recreates everything fresh instead of reusing stale handles */
+  try{gpu.wBufObj&&gpu.wBufObj.destroy()}catch(e){}
+  try{gpu.rBufObj&&gpu.rBufObj.destroy()}catch(e){}
+  try{gpu.readObj&&gpu.readObj.destroy()}catch(e){}
+  gpu.wBufObj=null;gpu.rBufObj=null;gpu.readObj=null;gpu.wSize=0;gpu.rSize=0;gpu.bind=null;gpu.pipeline=null;gpu.uni=null;gpu.device=null;gpu.ok=false;
+  const err=await gpuInit();
+  renderCaps();
+  if(gpu.ok){gpu.retries=0;log("GPU recovered — back to GPU+CPU split")}
+  else log("GPU still unavailable ("+err+")");
+  return gpu.ok;
+}
+function scheduleGpuRecovery(){
+  if(gpuRetryTimer||gpu.ok)return;
+  if(gpu.retries>=5){log("giving up on GPU auto-recovery after several failed attempts — it'll stay CPU-only until you reload the page");return}
+  gpu.retries++;
+  const delay=Math.min(15000,2000*gpu.retries);
+  gpuRetryTimer=setTimeout(async()=>{
+    gpuRetryTimer=null;
+    if(gpu.ok)return;
+    log("attempting GPU recovery (try "+gpu.retries+"/5)…");
+    await gpuReinit();
+    if(!gpu.ok)scheduleGpuRecovery();
+  },delay);
 }
 
 function gpuEnsureBuffers(wBytes,rBytes){
@@ -443,7 +493,7 @@ async function gpuEvaluate(genomes,cfg,gl,seed){
   const fit=new Float32Array(genomes.length),app=new Float32Array(genomes.length),stp=new Float32Array(genomes.length);
   for(let i=0;i<genomes.length;i+=perDispatch){
     const part=genomes.slice(i,i+perDispatch);
-    const r=await gpuPass(part,cfg,gl,(seed+i*7919)|0);
+    const r=await gpuPass(part,cfg,gl,seed);
     fit.set(r.fit,i);app.set(r.app,i);stp.set(r.stp,i);
   }
   return {fit,app,stp};
@@ -506,9 +556,39 @@ function cfgRead(){
 }
 function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
 function randomGenome(gl){const g=new Float32Array(gl);for(let i=0;i<gl;i++)g[i]=gauss()*0.5;return g}
-function mutate(g,rate,size){for(let i=0;i<g.length;i++)if(Math.random()<rate)g[i]+=gauss()*size;return g}
-function crossover(a,b){const c=new Float32Array(a.length);const cut=Math.floor(Math.random()*a.length);for(let i=0;i<a.length;i++)c[i]=i<cut?a[i]:b[i];return c}
-function tournament(ranked,k){let best=null;for(let i=0;i<k;i++){const c=ranked[Math.floor(Math.random()*ranked.length)];if(!best||c.fit>best.fit)best=c}return best}
+/* Mutation: gaussian nudges, but weights are clamped to a sane range so a
+   long run can't let them blow up into saturated, untrainable values, and a
+   small slice of mutations fully re-draw a weight instead of drifting — that
+   is what lets a stuck population escape a local optimum. */
+const WCLAMP=6;
+function mutate(g,rate,size){
+  for(let i=0;i<g.length;i++){
+    if(Math.random()<rate){
+      g[i]=(Math.random()<0.05)?gauss()*0.5:g[i]+gauss()*size;
+      if(g[i]>WCLAMP)g[i]=WCLAMP;else if(g[i]<-WCLAMP)g[i]=-WCLAMP;
+    }
+  }
+  return g;
+}
+/* Uniform crossover: a single cut point through a flat weight vector slices
+   neurons in half and usually destroys both parents' behaviour, which is why
+   offspring kept scoring worse than their parents. Per-weight inheritance
+   (with an occasional blend) mixes parents without wrecking them. */
+function crossover(a,b){
+  const c=new Float32Array(a.length);
+  const blend=Math.random()<0.3;
+  for(let i=0;i<a.length;i++)c[i]=blend?(a[i]+b[i])*0.5:(Math.random()<0.5?a[i]:b[i]);
+  return c;
+}
+/* Tournament selection over the fitter half of the ranked population: with
+   fair, shared-seed scoring the ranking is meaningful, so there is no reason
+   to keep drawing parents from the bottom half. */
+function tournament(ranked,k){
+  const cap=Math.max(2,Math.floor(ranked.length/2));
+  let best=null;
+  for(let i=0;i<k;i++){const c=ranked[Math.floor(Math.random()*cap)];if(!best||c.fit>best.fit)best=c}
+  return best;
+}
 
 function spawnPool(count){
   killPool();
@@ -532,7 +612,7 @@ function cpuEvaluate(genomes,cfg,gl,baseSeed,offset){
       const flat=new Float32Array(task.count*gl);
       for(let i=0;i<task.count;i++)flat.set(genomes[task.from+i],i*gl);
       w.onmessage=e=>{out.push({from:task.from,count:task.count,fit:e.data.fit,app:e.data.app,stp:e.data.stp});feed()};
-      w.postMessage({id:task.from,weights:flat,count:task.count,geneLen:gl,cfg,seed:(baseSeed+(offset+task.from)*104729)|0},[flat.buffer]);
+      w.postMessage({id:task.from,weights:flat,count:task.count,geneLen:gl,cfg,seed:baseSeed|0},[flat.buffer]);
     };
     feed();
   }))).then(()=>out);
@@ -578,7 +658,7 @@ async function evaluate(pop,cfg,gl,seed){
       const rate=gpuSlice.length*cfg.games/(ms/1000);
       state.gpuRate=state.gpuRate?state.gpuRate*0.6+rate*0.4:rate;
       fit.set(r.fit,0);app.set(r.app,0);stp.set(r.stp,0);
-    }).catch(e=>{gpu.ok=false;log("GPU pass failed → CPU only: "+e.message)}));
+    }).catch(e=>{handleGpuLoss("pass failed: "+e.message)}));
   }
   if(cpuSlice.length){
     const t0=performance.now();
@@ -601,35 +681,45 @@ async function evaluate(pop,cfg,gl,seed){
 async function train(){
   const cfg=cfgRead();
   const gl=geneLen(cfg.hidden);
+  state._lastWorkers=Math.max(1,cfg.workers);
   /* Only spin up CPU workers when they'll actually do something: pure
      GPU-only runs (the default) skip worker creation entirely, and the
      split is fixed for the whole run — change the sliders and restart
      to pick up a new value, same as pop/hidden/etc. Re-checking and
      respawning workers every generation was the source of the extra
-     lag, so that's gone. */
+     lag, so that's gone. (If the GPU is later lost mid-run, handleGpuLoss
+     spins up a pool on the spot even when this started as a pure-GPU run.) */
   const needsCpu=!gpu.ok||$("autoSplit").checked||(+$("gpu").value)<100;
-  spawnPool(needsCpu?Math.max(1,cfg.workers):0);
+  spawnPool(needsCpu?state._lastWorkers:0);
   let pop=[];
+  let seeded=false;
+  state.bestG=null;
   if(state.brain&&state.brain.hidden===cfg.hidden){
+    seeded=true;
+    state.bestG=new Float32Array(state.brain.weights);
+    state.bestApples=state.brain.apples||0;
     pop.push(new Float32Array(state.brain.weights));
     while(pop.length<cfg.pop)pop.push(mutate(new Float32Array(state.brain.weights),cfg.mutRate,cfg.mutSize));
     log("seeded population from loaded brain (gen "+(state.brain.gen||0)+")");
   }else{
     for(let i=0;i<cfg.pop;i++)pop.push(randomGenome(gl));
   }
-  state.gen=0;state.history=[];state.started=performance.now();state.evaluated=0;state.stepAvg=0;state.gamesEff=cfg.games;state.staleGens=0;
+  state.gen=(seeded?(state.brain.gen||0):0);state.history=[];state.started=performance.now();state.evaluated=0;state.stepAvg=0;state.gamesEff=cfg.games;state.staleGens=0;state.evalMsEma=0;state.champIdx=seeded?0:-1;state.best=null;
   let lastGenTime=performance.now();
 
   while(state.training&&(cfg.maxGen===0||state.gen<cfg.maxGen)){
     /* keep the simulated work per generation roughly constant: as snakes
-       survive longer, score each genome on fewer games (never below 1) */
+       survive longer, score each genome on fewer games — but never below a
+       floor of 3, because one or two games per genome is mostly luck and
+       selection then breeds lucky snakes instead of good ones */
+    const GAMES_FLOOR=Math.min(cfg.games,3);
     const budget=cfg.games*400;
-    const targetGames=state.stepAvg>0?Math.max(1,Math.min(cfg.games,Math.round(budget/state.stepAvg))):cfg.games;
+    const targetGames=state.stepAvg>0?Math.max(GAMES_FLOOR,Math.min(cfg.games,Math.round(budget/state.stepAvg))):cfg.games;
     /* hwScale backs this off further when a generation is taking too long
        on this hardware (e.g. a mobile GPU), converging toward whatever
        games-per-genome this device can actually push through in ~300ms —
        instead of always running the configured max and staying slow forever */
-    const games=Math.max(1,Math.round(targetGames*state.hwScale));
+    const games=Math.max(GAMES_FLOOR,Math.round(targetGames*state.hwScale));
     state.gamesEff=games;
     const evalT0=performance.now();
     const res=await evaluate(pop,{...cfg,games},gl,(Math.random()*2**31)|0);
@@ -650,8 +740,19 @@ async function train(){
     const avgApples=ranked.reduce((s,r)=>s+r.apples,0)/ranked.length;
     state.history.push({gen:state.gen,fit:top.fit,apples:top.apples,avg:avgApples});
     if(state.history.length>360)state.history.shift();
-    if(!state.best||top.fit>state.best.fit){state.best={fit:top.fit,apples:top.apples,gen:state.gen};state.staleGens=0}else{state.staleGens=(state.staleGens||0)+1}
-    state.brain={hidden:cfg.hidden,weights:new Float32Array(top.g),gen:state.gen,apples:Math.round(top.apples*10)/10,fitness:Math.round(top.fit),board:cfg.board};
+    /* The champion is re-scored every generation (it sits at index 0 of the
+       population), so its record is refreshed against the games everyone
+       else just played. Without that, one lucky generation sets a record no
+       honest genome can ever beat and the run freezes on a mediocre snake.
+       The stored brain is always the champion — never a lucky one-off from
+       the current generation — so the saved brain and the chart can only
+       move forward. */
+    if(state.champIdx===0&&state.best)state.best.fit=state.best.fit*0.5+res.fit[0]*0.5;
+    if(!state.best||top.fit>state.best.fit){
+      state.best={fit:top.fit,apples:top.apples,gen:state.gen};
+      state.bestG=new Float32Array(top.g);state.bestApples=top.apples;state.staleGens=0;
+    }else state.staleGens=(state.staleGens||0)+1;
+    state.brain={hidden:cfg.hidden,weights:new Float32Array(state.bestG||top.g),gen:state.gen,apples:Math.round((state.bestApples!==undefined?state.bestApples:top.apples)*10)/10,fitness:Math.round(state.best.fit),board:cfg.board};
     try{localStorage.setItem("snake-neuro-brain",brainToJSON())}catch(e){}
 
     const now=performance.now();
@@ -662,58 +763,86 @@ async function train(){
     /* Auto-Turbo: hill-climb population size toward whatever this CPU+GPU
        combo can push through in ~250-450ms/generation. Below that band the
        hardware is sitting idle, so grow; above it the tab risks feeling
-       laggy, so shrink. Deliberately reactive rather than a one-shot guess,
-       since GPU/CPU throughput (and therefore the right population) drifts
-       as the auto GPU/CPU split and games/genome both settle in. Never
+       laggy, so shrink. Only re-checks every few generations (using a
+       smoothed timing average, not the latest single sample) instead of
+       every generation — reacting to every gen is wasted work once
+       population is already near its steady state, and makes the target
+       jumpy since one slow/fast generation is noise, not a trend. Never
        collapses toward the slider's floor on its own — it only shrinks
        when actually over the lag ceiling. */
     if($("turbo").checked){
-      const popMin=+$("pop").min,popMax=+$("pop").max;
-      const lagCeiling=450,comfortLow=250;
-      const step=Math.max(128,Math.round((cfg.pop*0.15)/128)*128);
-      let nextPop=cfg.pop;
-      if(evalMs<comfortLow&&cfg.pop<popMax)nextPop=Math.min(popMax,cfg.pop+step);
-      else if(evalMs>lagCeiling&&cfg.pop>popMin)nextPop=Math.max(popMin,cfg.pop-step);
-      if(nextPop!==cfg.pop){
-        cfg.pop=nextPop;setSlider("pop",cfg.pop);
-        const now2=performance.now();
-        if(now2-(state.turboLastLog||0)>1000){state.turboLastLog=now2;log("auto-turbo: population → "+cfg.pop+" ("+Math.round(evalMs)+"ms/gen, "+Math.round(state.gpuShare*100)+"% GPU)")}
+      state.evalMsEma=state.evalMsEma?state.evalMsEma*0.7+evalMs*0.3:evalMs;
+      if(state.gen%3===0){
+        const popMin=+$("pop").min,popMax=+$("pop").max;
+        const lagCeiling=450,comfortLow=250;
+        const step=Math.max(128,Math.round((cfg.pop*0.15)/128)*128);
+        let nextPop=cfg.pop;
+        if(state.evalMsEma<comfortLow&&cfg.pop<popMax)nextPop=Math.min(popMax,cfg.pop+step);
+        else if(state.evalMsEma>lagCeiling&&cfg.pop>popMin)nextPop=Math.max(popMin,cfg.pop-step);
+        if(nextPop!==cfg.pop){
+          cfg.pop=nextPop;setSlider("pop",cfg.pop);
+          log("auto-turbo: population → "+cfg.pop+" ("+Math.round(state.evalMsEma)+"ms/gen, "+Math.round(state.gpuShare*100)+"% GPU)");
+        }
       }
 
       /* Auto-Turbo: also tune Elite %, Mutation % and Mutation size toward
          whatever keeps the snake actually getting smarter, not just
-         whatever runs fastest. Judged by generations-since-last-new-best
-         (staleGens), checked every few generations so a single noisy
-         generation can't swing it:
-           - stalled a while → push mutation up and elite down to explore
-             out of the local optimum
-           - improving again → ease mutation back down and raise elite to
-             lock the gains in
+         whatever runs fastest. Two signals, checked every few generations
+         so a single noisy generation can't swing it:
+           - staleGens: generations since the last new all-time-best genome
+           - trend: slope of the average-apples line over the last 8
+             generations — the same "avg" line the chart plots, so this is
+             literally "is the graph going higher right now"
+         Only eases toward exploitation (less mutation, more elitism) when
+         BOTH a new best just landed AND the average-apples trend is
+         actually rising — a lone lucky best with a flat/falling average
+         doesn't count as progress worth locking in. Either stalling for a
+         while OR a non-rising trend pushes back toward exploration.
          Elitism (top genomes copied through unmutated every generation)
          is what makes this safe to push hard: the best genome found so
          far always survives intact, so aggressive mutation can only add
          new candidates, never destroy the current best. */
       if(state.gen%4===0){
-        const mutRmin=+$("mutR").min,mutRmax=+$("mutR").max;
-        const mutSmin=+$("mutS").min,mutSmax=+$("mutS").max;
-        const eliteMin=+$("elite").min,eliteMax=+$("elite").max;
+        /* Bounded, mean-reverting tuning. The old version only eased off
+           when a brand-new best had just landed AND the trend was rising,
+           so in practice mutation ratcheted to the slider's maximum and
+           elitism to its minimum, which destroyed the population and made
+           both chart lines fall. Now: mutation stays inside a sane band,
+           elitism never drops below a floor, and both drift back toward
+           their baseline whenever nothing conclusive is happening. */
+        const mutRmin=2,mutRmax=22,mutSmin=4,mutSmax=40;
+        const eliteFloor=Math.max(+$("elite").min,4),eliteCeil=Math.min(+$("elite").max,20);
+        const base={mutR:6,mutS:18,elite:8};
         let mutR=+$("mutR").value,mutS=+$("mutS").value,eliteV=+$("elite").value;
         const stale=state.staleGens||0;
-        let dir=0;
-        if(stale>=12){mutR=Math.min(mutRmax,mutR+2);mutS=Math.min(mutSmax,mutS+4);eliteV=Math.max(eliteMin,eliteV-1);dir=1}
-        else if(stale<=1){mutR=Math.max(mutRmin,mutR-1);mutS=Math.max(mutSmin,mutS-2);eliteV=Math.min(eliteMax,eliteV+1);dir=-1}
-        if(mutR!==cfg.mutRate*100||mutS!==cfg.mutSize*100||eliteV!==cfg.elite*100){
+        const hist=state.history,win=12;
+        const trend=hist.length>win?(hist[hist.length-1].avg-hist[hist.length-1-win].avg):0;
+        const toward=(v,t,step)=>v===t?v:(v<t?Math.min(t,v+step):Math.max(t,v-step));
+        let mode="hold";
+        if(stale>=20&&trend<=0.02)mode="explore";
+        else if(trend>0.05)mode="exploit";
+        if(mode==="explore"){mutR=Math.min(mutRmax,mutR+1);mutS=Math.min(mutSmax,mutS+2);eliteV=Math.max(eliteFloor,eliteV-1)}
+        else if(mode==="exploit"){mutR=Math.max(mutRmin,mutR-1);mutS=Math.max(mutSmin,mutS-2);eliteV=Math.min(eliteCeil,eliteV+1)}
+        else{mutR=toward(mutR,base.mutR,1);mutS=toward(mutS,base.mutS,2);eliteV=toward(eliteV,base.elite,1)}
+        mutR=Math.min(mutRmax,Math.max(mutRmin,mutR));
+        mutS=Math.min(mutSmax,Math.max(mutSmin,mutS));
+        eliteV=Math.min(eliteCeil,Math.max(eliteFloor,eliteV));
+        if(mutR!==Math.round(cfg.mutRate*100)||mutS!==Math.round(cfg.mutSize*100)||eliteV!==Math.round(cfg.elite*100)){
           cfg.mutRate=mutR/100;cfg.mutSize=mutS/100;cfg.elite=eliteV/100;
           setSlider("mutR",mutR);setSlider("mutS",mutS);setSlider("elite",eliteV);
-          const now3=performance.now();
-          if(now3-(state.turboLastLogGA||0)>1000){state.turboLastLogGA=now3;log("auto-turbo: mutation "+mutR+"%/"+mutS+"% · elite "+eliteV+"% ("+(dir>0?"stalled "+stale+" gens → exploring more":"improving → converging")+")")}
+          log("auto-turbo: mutation "+mutR+"%/"+mutS+"% · elite "+eliteV+"% (avg-apples trend "+(trend>=0?"+":"")+Math.round(trend*100)/100+", "+(mode==="explore"?"stalled "+stale+" gens → exploring more":mode==="exploit"?"graph climbing → converging":"steady → easing back to baseline")+")");
         }
       }
     }
 
     const eliteN=Math.max(1,Math.floor(cfg.pop*cfg.elite));
     const next=[];
-    for(let i=0;i<eliteN;i++)next.push(new Float32Array(ranked[i].g));
+    /* True elitism across generations: the all-time best genome is copied
+       through untouched every generation, so no amount of mutation (or an
+       unlucky evaluation) can make the population lose ground. */
+    state.champIdx=(state.bestG&&state.bestG.length===gl)?0:-1;
+    if(state.champIdx===0)next.push(new Float32Array(state.bestG));
+    for(let i=0;i<eliteN&&next.length<cfg.pop;i++)next.push(new Float32Array(ranked[i].g));
     while(next.length<cfg.pop){
       const a=tournament(ranked,5),b=tournament(ranked,5);
       next.push(mutate(crossover(a.g,b.g),cfg.mutRate,cfg.mutSize));
@@ -888,33 +1017,38 @@ $("file").onchange=async e=>{
     if(d.weights.length!==geneLen(d.hidden))throw new Error("weight count does not match hidden size");
     state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};
     $("hid").value=String(d.hidden);$("oHid").textContent=String(d.hidden);
+    if(!state.training){state.gen=state.brain.gen||0;state.history=[];state.best=null;render()}
     log("loaded brain: gen "+state.brain.gen+" · "+state.brain.apples+" apples · "+d.hidden+" hidden — training will continue from it");
   }catch(err){log("could not load brain: "+err.message)}
   e.target.value="";
 };
 
 /* capability probe */
+function renderCaps(){
+  const cores=navigator.hardwareConcurrency||4;
+  const caps=[];
+  caps.push("<span class='badge'>CPU threads <b>"+cores+"</b></span>");
+  if(navigator.deviceMemory)caps.push("<span class='badge'>RAM <b>"+navigator.deviceMemory+" GB</b></span>");
+  if(gpu.ok){
+    caps.push("<span class='badge'>GPU <b>"+(gpu.info||"WebGPU")+"</b></span>");
+    caps.push("<span class='badge'>GPU buffer <b>"+Math.round(gpu.maxStorage/1048576)+" MB</b></span>");
+  }else{
+    caps.push("<span class='badge' style='border-color:#5d3242'>GPU <b style='color:var(--bad)'>unavailable</b></span>");
+  }
+  $("caps").innerHTML=caps.join("");
+}
 (async()=>{
   const cores=navigator.hardwareConcurrency||4;
   $("workers").max=String(Math.max(1,cores*2));
   $("workers").value=String(cores);
   $("oWorkers").textContent=String(cores);
-  const caps=[];
-  caps.push("<span class='badge'>CPU threads <b>"+cores+"</b></span>");
-  if(navigator.deviceMemory)caps.push("<span class='badge'>RAM <b>"+navigator.deviceMemory+" GB</b></span>");
   const err=await gpuInit();
-  if(gpu.ok){
-    caps.push("<span class='badge'>GPU <b>"+(gpu.info||"WebGPU")+"</b></span>");
-    caps.push("<span class='badge'>GPU buffer <b>"+Math.round(gpu.maxStorage/1048576)+" MB</b></span>");
-    log("GPU compute ready — games are simulated on the GPU and CPU at the same time");
-  }else{
-    caps.push("<span class='badge' style='border-color:#5d3242'>GPU <b style='color:var(--bad)'>unavailable</b></span>");
-    log("GPU path off ("+err+") — running on all CPU cores only");
-  }
-  $("caps").innerHTML=caps.join("");
+  if(gpu.ok)log("GPU compute ready — games are simulated on the GPU and CPU at the same time");
+  else log("GPU path off ("+err+") — running on all CPU cores only");
+  renderCaps();
   try{
     const saved=localStorage.getItem("snake-neuro-brain");
-    if(saved){const d=JSON.parse(saved);if(d&&d.weights&&d.hidden){state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};log("found a saved brain (gen "+state.brain.gen+") — it will seed the first population")}}
+    if(saved){const d=JSON.parse(saved);if(d&&d.weights&&d.hidden){state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};state.gen=state.brain.gen||0;log("found a saved brain (gen "+state.brain.gen+") — it will seed the first population")}}
   }catch(e){}
   chart();
 })();
