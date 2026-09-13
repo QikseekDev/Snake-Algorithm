@@ -11,7 +11,7 @@ button,select,input{font:inherit}button,select{background:var(--panel2);border:1
 .app{min-height:100%;display:grid;grid-template-columns:minmax(300px,1fr) 340px;gap:18px;padding:18px;max-width:1420px;margin:0 auto}.stage{display:grid;grid-template-rows:auto 1fr;gap:14px;min-width:0}.top{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{display:flex;align-items:center;gap:12px}.mark{width:38px;height:38px;border-radius:9px;background:conic-gradient(from 180deg,var(--accent),#7dd3fc,var(--accent2),var(--accent));box-shadow:0 0 30px #2dd4bf33}.title h1{margin:0;font-size:24px;line-height:1.05;letter-spacing:0}.title p{margin:3px 0 0;color:var(--muted)}.status{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.pill{border:1px solid var(--line);background:#111923cc;border-radius:999px;padding:7px 10px;color:var(--muted)}.pill strong{color:var(--text)}
 .boardWrap{position:relative;display:grid;place-items:center;min-height:0;background:linear-gradient(180deg,#0d131b,#090d12);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 18px 60px #0008;overflow:hidden}.boardWrap:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,#ffffff08,transparent);transform:translateX(-100%);animation:sheen 8s infinite}@keyframes sheen{0%,70%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 canvas{position:relative;width:min(100%,calc(100vh - 130px));max-width:900px;aspect-ratio:1/1;border-radius:8px;background:#0b1218;image-rendering:pixelated;touch-action:none}.overlay{position:absolute;inset:14px;display:none;place-items:center;text-align:center;background:#070a0eb8;backdrop-filter:blur(5px);border-radius:8px}.overlay.show{display:grid}.modal{max-width:390px;padding:24px;border:1px solid #314154;background:#101822;border-radius:10px;box-shadow:0 20px 60px #000b}.modal h2{margin:0 0 8px;font-size:30px}.modal p{margin:0 0 18px;color:var(--muted)}
-.panel{background:#0f161f;border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:14px;align-content:start;box-shadow:0 16px 40px #0005}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px}.stat span{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}.stat b{display:block;margin-top:4px;font-size:22px}.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}.wide{grid-column:1/-1}.switch{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:8px;overflow:hidden}.switch button{border:0;border-radius:0;background:#121a24}.switch button.on{background:var(--accent);color:#06211e;font-weight:900}.readout{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}.hint{color:var(--muted);font-size:12px;margin:0}.kbd{display:inline-grid;place-items:center;min-width:23px;height:23px;border:1px solid var(--line);border-radius:5px;background:#16212c;color:#d8e6f3;font-size:12px}.touch{display:none;grid-template-columns:48px 48px 48px;gap:8px;justify-content:center}.touch button{width:48px;height:48px;padding:0;font-size:20px}.touch .up{grid-column:2}.touch .left{grid-column:1}.touch .down{grid-column:2}.touch .right{grid-column:3}.competition{display:none;gap:10px}.competition.show{display:grid}.leader{display:grid;gap:6px;max-height:310px;overflow:auto}.row{display:grid;grid-template-columns:26px 1.5fr repeat(7,.8fr);gap:6px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px;font-size:12px}.row.head{position:sticky;top:0;background:#1a2633;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;z-index:1}.dbg{display:grid;gap:8px}.dbgTitle{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}#debugOut{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#c6d6e6;white-space:pre-wrap;max-height:230px;overflow:auto}#debugOut b{color:var(--accent)}.row.dead{opacity:.58}.row b{font-size:13px}.compSummary{display:grid;grid-template-columns:1fr 1fr;gap:10px}.compSummary .stat b{font-size:17px}
+.panel{background:#0f161f;border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:14px;align-content:start;box-shadow:0 16px 40px #0005}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px}.stat span{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}.stat b{display:block;margin-top:4px;font-size:22px}.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}.wide{grid-column:1/-1}.switch{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:8px;overflow:hidden;min-height:44px}.switch button{border:0;border-radius:0;background:#121a24}.switch button.on{background:var(--accent);color:#06211e;font-weight:900}.readout{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}.hint{color:var(--muted);font-size:12px;margin:0}.kbd{display:inline-grid;place-items:center;min-width:23px;height:23px;border:1px solid var(--line);border-radius:5px;background:#16212c;color:#d8e6f3;font-size:12px}.touch{display:none;grid-template-columns:48px 48px 48px;gap:8px;justify-content:center}.touch button{width:48px;height:48px;padding:0;font-size:20px}.touch .up{grid-column:2}.touch .left{grid-column:1}.touch .down{grid-column:2}.touch .right{grid-column:3}.competition{display:none;gap:10px}.competition.show{display:grid}.leader{display:grid;gap:6px;max-height:310px;overflow:auto}.row{display:grid;grid-template-columns:26px 1.5fr repeat(7,.8fr);gap:6px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px;font-size:12px}.row.head{position:sticky;top:0;background:#1a2633;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;z-index:1}.dbg{display:grid;gap:8px}.dbgTitle{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}#debugOut{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#c6d6e6;white-space:pre-wrap;max-height:230px;overflow:auto}#debugOut b{color:var(--accent)}.row.dead{opacity:.58}.row b{font-size:13px}.compSummary{display:grid;grid-template-columns:1fr 1fr;gap:10px}.compSummary .stat b{font-size:17px}
 @media (max-width:900px){.app{grid-template-columns:1fr;padding:12px}.top{align-items:flex-start;flex-direction:column}.status{justify-content:flex-start}.panel{order:2}canvas{width:min(100%,80vh)}.touch{display:grid}}@media (max-width:520px){.stats,.controls{grid-template-columns:1fr}.title h1{font-size:21px}.modal h2{font-size:25px}}
 /* Landscape phones: keyed on height, not width, so it catches sideways
    phones regardless of how wide they report (many exceed the 900px
@@ -32,6 +32,17 @@ canvas{position:relative;width:min(100%,calc(100vh - 130px));max-width:900px;asp
   canvas{width:min(100%,calc(100vh - 50px));height:auto;max-width:100%}
   .panel{order:2;height:100vh;max-height:100vh;overflow-y:auto}
   .touch{display:grid}
+}
+/* Desktop/tablet: lock the app to the viewport. The board column keeps a
+   square canvas sized by available height/width, and the settings column
+   scrolls on its own instead of stretching the board. */
+@media (min-width:901px){
+  html,body{height:100%;overflow:hidden}
+  .app{height:100dvh;max-height:100dvh;min-height:0;overflow:hidden;align-items:stretch}
+  .stage{height:100%;min-height:0}
+  .boardWrap{min-height:0;min-width:0;overflow:hidden}
+  canvas{width:auto;height:auto;max-width:100%;max-height:100%;aspect-ratio:1/1}
+  .panel{min-height:0;height:100%;overflow-y:auto}
 }
 </style>
 </head>
@@ -98,7 +109,7 @@ canvas{position:relative;width:min(100%,calc(100vh - 130px));max-width:900px;asp
         <label class="wide">Mutation rate <b id="nnMutRateOut" style="color:var(--text)">8%</b><input id="nnMutRate" type="range" min="1" max="50" step="1" value="8"></label>
         <label class="wide">Mutation strength <b id="nnMutSizeOut" style="color:var(--text)">0.35</b><input id="nnMutSize" type="range" min="5" max="150" step="5" value="35"></label>
         <label class="wide">Keep best <b id="nnEliteOut" style="color:var(--text)">10%</b><input id="nnElite" type="range" min="1" max="40" step="1" value="10"></label>
-        <label class="wide">CPU workers <b id="nnWorkersOut" style="color:var(--text)">4</b><input id="nnWorkers" type="range" min="1" max="16" step="1" value="4"></label>
+        <label class="wide">CPU workers <b id="nnWorkersOut" style="color:var(--text)">4</b><input id="nnWorkers" type="range" min="1" max="32" step="1" value="8"></label>
         <label class="wide">Move limit per game <b id="nnStepsOut" style="color:var(--text)">1500</b><input id="nnSteps" type="range" min="200" max="6000" step="100" value="1500"></label>
         <div class="controls">
           <label>Training board <select id="nnBoard"><option>8</option><option>10</option><option selected>12</option><option>16</option><option>20</option></select></label>
@@ -122,6 +133,8 @@ canvas{position:relative;width:min(100%,calc(100vh - 130px));max-width:900px;asp
       <span class="dbgTitle">Hybrid AI tuning</span>
        <div class="switch wide"><button id="advOff" class="on">Standard</button><button id="advOn">Super advanced</button></div>
        <button id="advPro" class="wide">Apply suggested pro settings</button>
+       <label class="wide" style="flex-direction:row;display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px"><input id="advBrain" type="checkbox" style="width:auto">Use trained brain as advisor <span id="advBrainState" class="hint" style="margin:0">(no brain loaded)</span></label>
+       <label class="wide" id="advBrainWWrap" style="display:none">Advisor influence <b id="advBrainWOut" style="color:var(--text)">balanced</b><input id="advBrainW" type="range" min="1" max="10" value="5"><span class="readout"><span>Subtle</span><span>Dominant</span></span></label>
        <div id="advBody" style="display:none;gap:12px;grid-template-columns:1fr">
         <label class="wide">Switch to cycle at <b id="advCycleOut" style="color:var(--text)">45%</b> full <input id="advCycle" type="range" min="15" max="95" value="45"></label>
         <label class="wide">Safety margin <b id="advMarginOut" style="color:var(--text)">30% of length</b> <input id="advMargin" type="range" min="0" max="120" value="30"></label>
@@ -197,6 +210,7 @@ const $=id=>document.getElementById(id);
 const ui={score:$("score"),high:$("high"),length:$("length"),speedOut:$("speedOut"),modeText:$("modeText"),aiState:$("aiState"),algText:$("algText"),overlay:$("overlay"),overlayTitle:$("overlayTitle"),overlayText:$("overlayText"),overlayButton:$("overlayButton"),humanBtn:$("humanBtn"),aiBtn:$("aiBtn"),algorithm:$("algorithm"),restart:$("restart"),pause:$("pause"),speed:$("speed"),boost:$("boost"),size:$("size"),pathToggle:$("pathToggle"),appleCount:$("appleCount"),appleCountOut:$("appleCountOut"),competitionBtn:$("competitionBtn"),competitionSpeed:$("competitionSpeed"),competitionSpeedWrap:$("competitionSpeedWrap"),competitionPanel:$("competitionPanel"),competitionBest:$("competitionBest"),competitionWinner:$("competitionWinner"),leaderboard:$("leaderboard"),competitionRestart:$("competitionRestart"),debugPanel:$("debugPanel"),debugOut:$("debugOut"),
   advPanel:$("advPanel"),advOn:$("advOn"),advOff:$("advOff"),advBody:$("advBody"),advCycle:$("advCycle"),advCycleOut:$("advCycleOut"),advMargin:$("advMargin"),advMarginOut:$("advMarginOut"),advHorizon:$("advHorizon"),advHorizonOut:$("advHorizonOut"),advBold:$("advBold"),advBoldOut:$("advBoldOut"),advRisk:$("advRisk"),advRiskOut:$("advRiskOut"),advPatience:$("advPatience"),advPatienceOut:$("advPatienceOut"),advWidth:$("advWidth"),advWidthOut:$("advWidthOut"),advChain:$("advChain"),advDepth:$("advDepth"),advReset:$("advReset"),advPro:$("advPro"),
   advSearch:$("advSearch"),advTrap:$("advTrap"),advCoil:$("advCoil"),advCoilOut:$("advCoilOut"),advTail:$("advTail"),advTailOut:$("advTailOut"),advAdapt:$("advAdapt"),advIdle:$("advIdle"),advGod:$("advGod"),
+  advBrain:$("advBrain"),advBrainState:$("advBrainState"),advBrainW:$("advBrainW"),advBrainWOut:$("advBrainWOut"),advBrainWWrap:$("advBrainWWrap"),
   dbgLevel:$("dbgLevel"),dbgFreeze:$("dbgFreeze"),dbgCopy:$("dbgCopy"),dbgMode:$("dbgMode"),dbgTime:$("dbgTime"),dbgSafety:$("dbgSafety")};
 Object.assign(ui,{nnGen:$("nnGen"),nnBestApples:$("nnBestApples"),nnAvgApples:$("nnAvgApples"),nnRate:$("nnRate"),nnChart:$("nnChart"),nnStart:$("nnStart"),
   nnPop:$("nnPop"),nnPopOut:$("nnPopOut"),nnHidden:$("nnHidden"),nnHiddenOut:$("nnHiddenOut"),nnGames:$("nnGames"),nnGamesOut:$("nnGamesOut"),
@@ -210,7 +224,7 @@ Object.assign(ui,{nnGen:$("nnGen"),nnBestApples:$("nnBestApples"),nnAvgApples:$(
    Every knob has a safe default that reproduces the standard
    behaviour, so Standard mode === the original tuned AI.
    ============================================================ */
-const ADV_DEFAULTS={cycle:45,margin:30,horizon:70,bold:8,risk:50,patience:35,width:8,chain:1,depth:1,search:"auto",trap:1,coil:35,tail:15,adapt:1,idle:"tail"};
+const ADV_DEFAULTS={cycle:45,margin:30,horizon:70,bold:8,risk:50,patience:35,width:8,chain:1,depth:1,search:"auto",trap:1,coil:35,tail:15,adapt:1,idle:"tail",brain:0,brainW:5};
 const NN_DEFAULTS={pop:300,hidden:20,games:3,mutRate:8,mutSize:35,elite:10,steps:1500,board:"12",maxGen:"0",seedBest:true,autosave:true,guard:true};
 const ADV_PRO={cycle:40,margin:40,horizon:140,bold:11,risk:35,patience:80,width:16,chain:2,depth:2,search:"auto",trap:2,coil:55,tail:25,adapt:1,idle:"cycle"};
 /* Super AI (God Mode): maximum-survival preset. width/depth are back to full
@@ -816,6 +830,14 @@ function hybridMove(st){
     }
   }
   dbg.lines.push("candidate apple routes: "+cands.length+(cfg.on?" (examining up to "+cfg.width+" per pass)":""));
+  /* --- trained-brain advisor ------------------------------------------
+     When enabled in the tuning panel, the neuroevolved brain gets a vote:
+     routes whose FIRST step matches the brain's preferred move get a flat
+     bonus, so training data nudges the planner without ever being able to
+     override the hard safety checks above (room, tail, dry-run, trap). */
+  const nadv=neuroAdvice(st);
+  if(adv.brain&&!nadv)dbg.lines.push("brain advisor: on, but no brain is loaded — train one in the neural net panel or load a saved brain");
+  if(nadv)dbg.lines.push("brain advisor: gen "+(neuro.brain.gen||0)+" brain prefers "+nadv.pick+" (confidence "+nadv.conf.toFixed(2)+", +"+nadv.w+" to routes starting that way)"+(neuro.brain.board&&Number(neuro.brain.board)!==b?" · trained on a "+neuro.brain.board+"×"+neuro.brain.board+" board":""));
   // room the snake insists on keeping after a meal; grows as the board fills
   const plan=(margin,checkFuture)=>{
     let bestPlan=null,bestScore=-Infinity;
@@ -854,6 +876,7 @@ function hybridMove(st){
       // risk appetite: <1 values leftover room, >1 values getting there fast
       let score=space*4/Math.max(.3,cfg.riskW)-c.path.length*4*cfg.riskW+roomRatio*900/Math.max(.3,cfg.riskW);
       if(space>=freeCells)score+=500;                       // keeps the board in one piece
+      if(nadv&&c.path.length&&c.path[0]===nadv.pick)score+=nadv.w;   // trained-brain vote
       /* --- ORACLE: the next apples are already known -------------------
          Plain hybrid scores a route on room + length. The oracle also knows
          exactly where the apple AFTER this meal (and the one after that)
@@ -1431,11 +1454,11 @@ function loop(t){
   // rendered frames and ~4 game ticks per second (each AI tick runs flood
   // fills that get more expensive as the snake grows).
   if(neuro.training){
-    if(t-lastDraw<250){requestAnimationFrame(loop);return}
+    if(t-lastDraw<1000){requestAnimationFrame(loop);return}
     lastDraw=t;
-    if(acc>250)acc=250;
+    if(acc>1000)acc=1000;
   }
-  const wait=competition?1000/Number(ui.competitionSpeed.value):Math.max(tickMs,neuro.training?250:0),maxSteps=competition?3:(neuro.training?1:(ai?3:5));
+  const wait=competition?1000/Number(ui.competitionSpeed.value):Math.max(tickMs,neuro.training?1000:0),maxSteps=competition?3:(neuro.training?1:(ai?3:5));
   let steps=0;
   while(acc>=wait&&steps++<maxSteps){step();acc-=wait}
   if(steps>=maxSteps)acc=0;
@@ -1479,6 +1502,11 @@ function advSync(){
   ui.advTailOut.textContent=adv.tail+"% of length";
   ui.advSearch.value=adv.search;ui.advTrap.value=String(adv.trap);ui.advCoil.value=adv.coil;
   ui.advTail.value=adv.tail;ui.advAdapt.value=String(adv.adapt);ui.advIdle.value=adv.idle;
+  ui.advBrain.checked=!!adv.brain;
+  ui.advBrainWWrap.style.display=adv.brain?"":"none";
+  ui.advBrainW.value=adv.brainW;
+  ui.advBrainWOut.textContent=(["subtle","gentle","mild","soft","balanced","firm","strong","loud","commanding","dominant"][Math.min(9,adv.brainW-1)])+" ("+adv.brainW+"/10)";
+  try{updateAdvBrainState()}catch(e){ui.advBrainState.textContent="(no brain loaded)"}
   ui.advBody.style.display=adv.on?"grid":"none";
   ui.advOn.classList.toggle("on",adv.on);ui.advOff.classList.toggle("on",!adv.on);
 }
@@ -1488,6 +1516,8 @@ advBind(ui.advBold,"bold",true);advBind(ui.advRisk,"risk",true);advBind(ui.advPa
 advBind(ui.advWidth,"width",true);advBind(ui.advChain,"chain",true);advBind(ui.advDepth,"depth",true);
 advBind(ui.advSearch,"search",false);advBind(ui.advTrap,"trap",true);advBind(ui.advCoil,"coil",true);
 advBind(ui.advTail,"tail",true);advBind(ui.advAdapt,"adapt",true);advBind(ui.advIdle,"idle",false);
+advBind(ui.advBrainW,"brainW",true);
+ui.advBrain.onchange=()=>{adv.brain=ui.advBrain.checked?1:0;advSync();updateDebug()};
 ui.advOn.onclick=()=>{adv.on=true;advSync();updateDebug()};
 ui.advOff.onclick=()=>{adv.on=false;advSync();updateDebug()};
 ui.advReset.onclick=()=>{Object.assign(adv,ADV_DEFAULTS);advSync();updateDebug()};
@@ -1562,6 +1592,33 @@ function neuroForward(w,hid,inp,out,scratch){
 }
 
 const neuroBuf={inp:new Float32Array(NEURO_IN),out:new Float32Array(NEURO_OUT),hid:new Float32Array(256),occ:null,b:0};
+/* Advisor used by Hybrid/Oracle: runs one forward pass with the trained
+   brain and returns its preferred move + confidence. The planner adds a
+   flat score bonus to routes that start with that move, so the brain can
+   only ever tilt a decision between routes that already passed every hard
+   safety check — it can never force an unsafe move. Returns null when the
+   toggle is off or no brain is loaded. */
+function neuroAdvice(st){
+  if(!adv.brain||!neuro.brain)return null;
+  const b=st.board,n=b*b;
+  if(neuroBuf.b!==b){neuroBuf.b=b;neuroBuf.occ=new Uint8Array(n)}
+  const occ=neuroBuf.occ;occ.fill(0);
+  for(let i=0;i<st.snake.length;i++)occ[st.snake[i].y*b+st.snake[i].x]=1;
+  const tail=st.snake[st.snake.length-1],prev=st.snake[st.snake.length-2]||st.snake[0];
+  const tdx=Math.sign(prev.x-tail.x),tdy=Math.sign(prev.y-tail.y);
+  const tailIdx=Math.max(0,ORDER.findIndex(d=>DIRS[d].x===tdx&&DIRS[d].y===tdy));
+  const dirIdx=ORDER.indexOf(st.dir);
+  let near=null,nd=Infinity;
+  for(const f of st.foods){const d=man(st.snake[0],f);if(d<nd){nd=d;near=f}}
+  neuroSense(b,occ,st.snake[0],near?[near]:[],dirIdx,tailIdx,neuroBuf.inp);
+  const hid=neuro.brain.hidden;
+  if(neuroBuf.hid.length<hid)neuroBuf.hid=new Float32Array(hid);
+  neuroForward(neuro.brain.weights,hid,neuroBuf.inp,neuroBuf.out,neuroBuf.hid);
+  const scored=ORDER.map((d,i)=>[neuroBuf.out[i],d]).filter(s=>!opposite(s[1],st.dir)).sort((a,b2)=>b2[0]-a[0]);
+  if(!scored.length)return null;
+  const conf=scored.length>1?Math.max(0,scored[0][0]-scored[1][0]):Math.abs(scored[0][0]);
+  return {pick:scored[0][1],conf,w:Math.round(adv.brainW*400*(0.5+Math.min(1.5,conf)))};
+}
 function neuroMove(st){
   st.path=[];
   st.debug={lines:["algorithm: Neural Net (neuroevolution)"]};
@@ -1631,6 +1688,8 @@ const NEURO_WORKER_SRC=[
 "var IN=32,OUT=4;",
 "var D4=[[0,-1],[1,0],[0,1],[-1,0]];",
 "var D8=[[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];",
+"var E8X=new Int8Array([0,1,1,1,0,-1,-1,-1]),E8Y=new Int8Array([-1,-1,0,1,1,1,0,-1]);",
+"var D4X=new Int8Array([0,1,0,-1]),D4Y=new Int8Array([-1,0,1,0]);",
 "function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}",
 // Same 32 inputs as before (brains stay compatible), but the wall distance and
 // the apple hit are pure arithmetic instead of walking the ray cell by cell,
@@ -1639,7 +1698,7 @@ const NEURO_WORKER_SRC=[
 "function sense(b,occ,hx,hy,fx,fy,dirIdx,tailIdx,inp){",
 "  var i=0;",
 "  for(var k=0;k<8;k++){",
-"    var dx=D8[k][0],dy=D8[k][1];",
+"    var dx=E8X[k],dy=E8Y[k];",
 "    var lim=1e9;",
 "    if(dx>0){lim=b-hx}else if(dx<0){lim=hx+1}",
 "    if(dy>0){if(b-hy<lim)lim=b-hy}else if(dy<0){if(hy+1<lim)lim=hy+1}",
@@ -1676,7 +1735,7 @@ const NEURO_WORKER_SRC=[
 // (h+i)%cap. The old code shifted every segment by one on EVERY step, so a
 // game cost O(steps x length) — that quadratic is why generation 300+ crawled
 // even though the games/s counter started out fine.
-"  var m=Math.floor(b/2),h=0,len=3;",
+"  var m=(b>>1),h=0,len=3;",
 "  sx[0]=m+1;sy[0]=m;sx[1]=m;sy[1]=m;sx[2]=m-1;sy[2]=m;",
 "  for(var i=0;i<len;i++)occ[sy[i]*b+sx[i]]=1;",
 "  var fx=0,fy=0;",
@@ -1688,14 +1747,14 @@ const NEURO_WORKER_SRC=[
 "  var maxSteps=cfg.maxSteps;",
 "  while(alive&&steps<maxSteps){",
 "    var ti=(h+len-1)%cap,pi=(h+len-2)%cap;",
-"    var tdx=Math.sign(sx[pi]-sx[ti]),tdy=Math.sign(sy[pi]-sy[ti]),tailIdx=0;",
-"    for(var d=0;d<4;d++)if(D4[d][0]===tdx&&D4[d][1]===tdy)tailIdx=d;",
+"    var tdx=sx[pi]-sx[ti],tdy=sy[pi]-sy[ti],tailIdx=0;",
+"    if(tdy<0)tailIdx=0;else if(tdx>0)tailIdx=1;else if(tdy>0)tailIdx=2;else if(tdx<0)tailIdx=3;",
 "    sense(b,occ,sx[h],sy[h],fx,fy,dirIdx,tailIdx,inp);",
 "    forward(w,off,hid,inp,out,sc);",
 "    var bi=0;for(var o=1;o<4;o++)if(out[o]>out[bi])bi=o;",
 "    if((bi+2)%4===dirIdx){var bj=-1;for(var o2=0;o2<4;o2++){if((o2+2)%4===dirIdx)continue;if(bj<0||out[o2]>out[bj])bj=o2}bi=bj}",
 "    dirIdx=bi;",
-"    var nx=sx[h]+D4[bi][0],ny=sy[h]+D4[bi][1];",
+"    var nx=sx[h]+D4X[bi],ny=sy[h]+D4Y[bi];",
 "    if(nx<0||ny<0||nx>=b||ny>=b){alive=false;break}",
 "    var eats=(nx===fx&&ny===fy);",
 "    var tailX=sx[ti],tailY=sy[ti];",
@@ -1758,47 +1817,60 @@ function neuroCfg(){
     hungerPenalty:0.05,
   };
 }
-function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
-function randomGenome(gl){const g=new Float32Array(gl);for(let i=0;i<gl;i++)g[i]=gauss()*0.5;return g}
-function mutate(g,rate,size){for(let i=0;i<g.length;i++)if(Math.random()<rate)g[i]+=gauss()*size;return g}
-function crossover(a,b){const c=new Float32Array(a.length);const cut=Math.floor(Math.random()*a.length);for(let i=0;i<a.length;i++)c[i]=i<cut?a[i]:b[i];return c}
-function tournament(ranked,k){let best=null;for(let i=0;i<k;i++){const c=ranked[Math.floor(Math.random()*ranked.length)];if(!best||c.fit>best.fit)best=c}return best}
+/* Box–Muller was a real cost on the main thread: pop × genes calls per
+   generation, each with log/cos and two retry loops. A 4-uniform sum
+   approximates a unit gaussian well enough for mutation and is far cheaper. */
+function gauss(){return (Math.random()+Math.random()+Math.random()+Math.random()-2)*1.73}
+/* The whole population lives in ONE flat Float32Array (genome i at i*gl).
+   The old code kept an array per genome and allocated fresh arrays in every
+   crossover/mutation and again when flattening for the workers — pop 300 ×
+   744 floats of garbage several times per generation, which was the main
+   source of main-thread stutter while training. */
+function randomGenomeInto(g,off,len){for(let i=0;i<len;i++)g[off+i]=gauss()*0.5}
+function mutateInPlace(g,off,len,rate,size){for(let i=0;i<len;i++)if(Math.random()<rate)g[off+i]+=gauss()*size}
+function crossoverInto(dst,doff,src,aoff,boff,len){const cut=1+Math.floor(Math.random()*(len-1));dst.set(src.subarray(aoff,aoff+cut),doff);dst.set(src.subarray(boff+cut,boff+len),doff+cut)}
+function tournament(fit,popN,k){let best=-1;for(let i=0;i<k;i++){const c=Math.floor(Math.random()*popN);if(best<0||fit[c]>fit[best])best=c}return best}
 
-function neuroEvaluate(pop,cfg,gl){
+function neuroEvaluate(pop,cfg,gl,popN,fit,app,stp){
   const workers=neuro.pool;
   // Small tasks in a shared queue instead of one giant slice per worker:
   // a slow core can no longer hold up the whole generation.
-  const per=Math.max(4,Math.ceil(pop.length/(workers.length*4)));
+  const per=Math.max(4,Math.ceil(popN/(workers.length*4)));
   const tasks=[];
-  for(let from=0;from<pop.length;from+=per)tasks.push([from,Math.min(pop.length,from+per)]);
+  for(let from=0;from<popN;from+=per)tasks.push([from,Math.min(popN,from+per)]);
   const seed=(Math.random()*0x7fffffff)>>>0;
-  const out=[];
   let next=0;
   return Promise.all(workers.map(w=>new Promise(resolve=>{
     const run=()=>{
       if(next>=tasks.length||!neuro.training){w.onmessage=null;resolve();return}
       const [from,to]=tasks[next++];
       const count=to-from;
-      const flat=new Float32Array(count*gl);
-      for(let k=0;k<count;k++)flat.set(pop[from+k],k*gl);
-      w.onmessage=e=>{out.push({from,count,...e.data});run()};
+      const flat=pop.slice(from*gl,to*gl);
+      /* results land straight into the shared fitness arrays — no per-task
+         result objects to collect and re-expand on the main thread */
+      w.onmessage=e=>{const d=e.data;fit.set(d.fit,from);app.set(d.app,from);stp.set(d.stp,from);run()};
       w.postMessage({id:from,weights:flat,count,geneLen:gl,cfg,seed},[flat.buffer]);
     };
     run();
-  }))).then(()=>out);
+  })));
 }
 
 async function neuroTrain(){
   const cfg=neuroCfg();
-  const gl=geneLen(cfg.hidden);
+  const gl=geneLen(cfg.hidden),popN=cfg.pop;
   neuroSpawnPool(Math.max(1,cfg.workers));
-  let pop=[];
+  let pop=new Float32Array(popN*gl),next=new Float32Array(popN*gl);
   if(neuro.brain&&neuro.brain.hidden===cfg.hidden&&ui.nnSeedBest.checked){
-    pop.push(new Float32Array(neuro.brain.weights));
-    while(pop.length<cfg.pop)pop.push(mutate(new Float32Array(neuro.brain.weights),cfg.mutRate,cfg.mutSize));
+    for(let i=0;i<popN;i++){
+      pop.set(neuro.brain.weights.subarray(0,gl),i*gl);
+      if(i>0)mutateInPlace(pop,i*gl,gl,cfg.mutRate,cfg.mutSize);
+    }
   }else{
-    for(let i=0;i<cfg.pop;i++)pop.push(randomGenome(gl));
+    for(let i=0;i<popN;i++)randomGenomeInto(pop,i*gl,gl);
   }
+  /* per-generation scratch, allocated once up front instead of per genome */
+  const fitA=new Float32Array(popN),appA=new Float32Array(popN),stpA=new Float32Array(popN);
+  const order=new Uint32Array(popN);
   neuro.gen=0;neuro.history=[];neuro.started=performance.now();neuro.evaluated=0;neuro.lastSave=0;neuro.lastRender=0;
   /* A generation gets slower purely because the snakes get better: a gen-10
      genome dies after ~50 moves, a gen-300 one survives until the move limit,
@@ -1811,26 +1883,27 @@ async function neuroTrain(){
     const budget=cfg.games*400;
     const games=neuro.stepAvg>0?Math.max(1,Math.min(cfg.games,Math.round(budget/neuro.stepAvg))):cfg.games;
     neuro.gamesEff=games;
-    const results=await neuroEvaluate(pop,{...cfg,games},gl);
+    await neuroEvaluate(pop,{...cfg,games},gl,popN,fitA,appA,stpA);
     if(!neuro.training)break;
-    const ranked=[];
-    results.forEach(r=>{for(let i=0;i<r.count;i++)ranked.push({g:pop[r.from+i],fit:r.fit[i],apples:r.app[i],steps:r.stp[i]})});
-    ranked.sort((a,b)=>b.fit-a.fit);
-    neuro.gen++;neuro.evaluated+=pop.length*games;
-    const stepAvg=ranked.reduce((s,r)=>s+r.steps,0)/ranked.length;
+    /* sort genome INDICES by fitness — no per-genome result objects at all */
+    for(let i=0;i<popN;i++)order[i]=i;
+    order.sort((a,b)=>fitA[b]-fitA[a]);
+    neuro.gen++;neuro.evaluated+=popN*games;
+    let stepSum=0,appSum=0;
+    for(let i=0;i<popN;i++){stepSum+=stpA[i];appSum+=appA[i]}
+    const stepAvg=stepSum/popN,avgApples=appSum/popN;
     neuro.stepAvg=neuro.stepAvg?neuro.stepAvg*0.7+stepAvg*0.3:stepAvg;
-    const top=ranked[0];
-    const avgApples=ranked.reduce((s,r)=>s+r.apples,0)/ranked.length;
-    neuro.history.push({gen:neuro.gen,fit:top.fit,apples:top.apples,avg:avgApples});
+    const top=order[0];
+    neuro.history.push({gen:neuro.gen,fit:fitA[top],apples:appA[top],avg:avgApples});
     if(neuro.history.length>240)neuro.history.shift();
-    if(!neuro.best||top.fit>neuro.best.fit){
-      neuro.best={fit:top.fit,apples:top.apples,gen:neuro.gen};
+    if(!neuro.best||fitA[top]>neuro.best.fit){
+      neuro.best={fit:fitA[top],apples:appA[top],gen:neuro.gen};
     }
     /* The brain actually used for live play always tracks the latest
        generation, not just the historical best-fit one — otherwise a
        plateaued or noisy run could keep feeding gameplay a stale snapshot
        from many generations back even though training kept going. */
-    neuro.brain={hidden:cfg.hidden,weights:new Float32Array(top.g),gen:neuro.gen,apples:Math.round(top.apples*10)/10,fitness:Math.round(top.fit),board:cfg.board};
+    neuro.brain={hidden:cfg.hidden,weights:pop.slice(top*gl,top*gl+gl),gen:neuro.gen,apples:Math.round(appA[top]*10)/10,fitness:Math.round(fitA[top]),board:cfg.board};
     /* Autosave serialises every weight to JSON and writes localStorage
        synchronously; early on almost every generation is a new best, so this
        was stuttering the page several times a second. Once every 5s is plenty
@@ -1841,16 +1914,20 @@ async function neuroTrain(){
        at a few hundred generations a second the UI work cost more than the
        evolution itself. */
     if(now-(neuro.lastRender||0)>200){neuro.lastRender=now;neuroRender(cfg,avgApples)}
-    /* next generation */
-    const eliteN=Math.max(1,Math.floor(cfg.pop*cfg.elite));
-    const next=[];
-    for(let i=0;i<eliteN;i++)next.push(new Float32Array(ranked[i].g));
-    while(next.length<cfg.pop){
-      const a=tournament(ranked,5),b=tournament(ranked,5);
-      next.push(mutate(crossover(a.g,b.g),cfg.mutRate,cfg.mutSize));
+    /* next generation: elites are copied, the rest are bred straight into the
+       spare flat buffer — zero allocations per genome */
+    const eliteN=Math.max(1,Math.floor(popN*cfg.elite));
+    for(let i=0;i<eliteN;i++)next.set(pop.subarray(order[i]*gl,order[i]*gl+gl),i*gl);
+    for(let i=eliteN;i<popN;i++){
+      const a=tournament(fitA,popN,5),b=tournament(fitA,popN,5);
+      crossoverInto(next,i*gl,pop,a*gl,b*gl,gl);
+      mutateInPlace(next,i*gl,gl,cfg.mutRate,cfg.mutSize);
     }
-    pop=next;
-    await new Promise(r=>setTimeout(r,0));
+    const swap=pop;pop=next;next=swap;
+    /* one macrotask yield every 8 generations is enough to keep the UI
+       responsive; yielding every generation cost a clamped timer (~4ms) on
+       every single generation, which dominated once generations got fast. */
+    if(neuro.gen%8===0)await new Promise(r=>setTimeout(r,0));
   }
   neuroKillPool();
   neuro.training=false;
@@ -1860,6 +1937,9 @@ async function neuroTrain(){
   neuroRender(cfg);
 }
 
+function updateAdvBrainState(){
+  try{ui.advBrainState.textContent=neuro.brain?("(gen "+(neuro.brain.gen||0)+" · "+(neuro.brain.apples||0)+" apples)"):"(no brain loaded)"}catch(e){}
+}
 function neuroRender(cfg,avg){
   const h=neuro.history[neuro.history.length-1];
   ui.nnGen.textContent=String(neuro.gen);
@@ -1868,6 +1948,7 @@ function neuroRender(cfg,avg){
   const secs=(performance.now()-neuro.started)/1000;
   ui.nnRate.textContent=neuro.training&&secs>0?Math.round(neuro.evaluated/secs)+" games/s · "+(neuro.gamesEff||1)+"/genome":"idle";
   ui.nnBrain.textContent=neuro.brain?("gen "+neuro.brain.gen+" · "+neuro.brain.apples+" apples · "+neuro.brain.hidden+"h"):"none loaded";
+  updateAdvBrainState();
   neuroChart();
 }
 function neuroChart(){
@@ -1970,9 +2051,9 @@ function neuroSync(){
   ui[k].addEventListener("input",neuroSync);
 });
 ui.nnBoard.onchange=neuroSaveCfg;ui.nnMaxGen.onchange=neuroSaveCfg;
-ui.nnWorkers.max=String(Math.max(1,(navigator.hardwareConcurrency||4)));
+ui.nnWorkers.max=String(Math.max(2,Math.min(32,(navigator.hardwareConcurrency||4)*2)));
 // leave a core for the UI thread and never oversubscribe small devices
-ui.nnWorkers.value=String(Math.max(1,Math.min((navigator.hardwareConcurrency||4)-1,6)));
+ui.nnWorkers.value=String(Math.max(1,navigator.hardwareConcurrency||4));
 /* ---------- screen wake lock (keep display on while training overnight) ---------- */
 let wakeLock=null,noSleepVideo=null;
 // Tiny silent looping video: the Wake Lock API is unavailable in insecure
@@ -2032,7 +2113,7 @@ ui.nnReset.onclick=()=>{
   ui.nnPop.value=NN_DEFAULTS.pop;ui.nnHidden.value=NN_DEFAULTS.hidden;ui.nnGames.value=NN_DEFAULTS.games;
   ui.nnMutRate.value=NN_DEFAULTS.mutRate;ui.nnMutSize.value=NN_DEFAULTS.mutSize;ui.nnElite.value=NN_DEFAULTS.elite;
   ui.nnSteps.value=NN_DEFAULTS.steps;ui.nnBoard.value=NN_DEFAULTS.board;ui.nnMaxGen.value=NN_DEFAULTS.maxGen;
-  ui.nnWorkers.value=String(Math.max(1,Math.min((navigator.hardwareConcurrency||4)-1,6)));
+  ui.nnWorkers.value=String(Math.max(1,navigator.hardwareConcurrency||4));
   ui.nnSeedBest.checked=NN_DEFAULTS.seedBest;ui.nnAutosave.checked=NN_DEFAULTS.autosave;ui.nnGuard.checked=NN_DEFAULTS.guard;
   neuro.autosave=NN_DEFAULTS.autosave;neuro.guard=NN_DEFAULTS.guard;
   neuroSync();neuroToast("training settings reset to defaults");
