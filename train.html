@@ -109,6 +109,12 @@ const log=(m)=>{const l=$("log");l.textContent+=m+"\n";l.scrollTop=l.scrollHeigh
 
 /* =========================================================
    CPU worker — identical game + net logic to the in-page trainer
+   NOTE: this exact simulation (sense/forward/play) also exists as a
+   WGSL shader below (gpuInit/WGSL) and, in inference-only form, as
+   neuroSense/neuroForward in index.html. There's no shared source —
+   all three are hand-kept in sync. A change to inputs, rewards, or
+   movement rules here needs the same change in both other places or
+   a trained brain will behave differently depending on where it runs.
    ========================================================= */
 const WORKER_SRC=[
 "'use strict';",
@@ -659,7 +665,20 @@ async function evaluate(pop,cfg,gl,seed){
       const rate=gpuSlice.length*cfg.games/(ms/1000);
       state.gpuRate=state.gpuRate?state.gpuRate*0.6+rate*0.4:rate;
       fit.set(r.fit,0);app.set(r.app,0);stp.set(r.stp,0);
-    }).catch(e=>{handleGpuLoss("pass failed: "+e.message)}));
+    }).catch(async e=>{
+      handleGpuLoss("pass failed: "+e.message);
+      /* Don't let a mid-generation GPU crash score its whole slice as the
+         worst of the population (zeros) — handleGpuLoss has already made
+         sure a CPU pool exists, so replay just this slice there instead of
+         losing the generation's work for those genomes. */
+      if(state.training&&state.pool.length){
+        try{
+          const chunks=await cpuEvaluate(gpuSlice,cfg,gl,seed,0);
+          chunks.forEach(c=>{for(let i=0;i<c.count;i++){const idx=c.from+i;fit[idx]=c.fit[i];app[idx]=c.app[i];stp[idx]=c.stp[i]}});
+          log("recovered "+gpuSlice.length+" genome(s) on CPU after the GPU pass failed");
+        }catch(e2){/* fallback also failed — those genomes keep a zero score for this generation only */}
+      }
+    }));
   }
   if(cpuSlice.length){
     const t0=performance.now();
@@ -705,7 +724,7 @@ async function train(){
   }else{
     for(let i=0;i<cfg.pop;i++)pop.push(randomGenome(gl));
   }
-  state.gen=(seeded?(state.brain.gen||0):0);state.history=[];state.started=performance.now();state.evaluated=0;state.stepAvg=0;state.gamesEff=cfg.games;state.staleGens=0;state.evalMsEma=0;state.champIdx=seeded?0:-1;state.best=null;
+  state.gen=(seeded?(state.brain.gen||0):0);state.history=[];state.started=performance.now();state.evaluated=0;state.stepAvg=0;state.gamesEff=cfg.games;state.staleGens=0;state.evalMsEma=0;state.champIdx=seeded?0:-1;state.best=null;state.champEma=undefined;state.goodBase=null;state.holdChecks=0;
   let lastGenTime=performance.now();
 
   while(state.training&&(cfg.maxGen===0||state.gen<cfg.maxGen)){
@@ -740,20 +759,84 @@ async function train(){
     const top=ranked[0];
     const avgApples=ranked.reduce((s,r)=>s+r.apples,0)/ranked.length;
     const avgFit=ranked.reduce((s,r)=>s+r.fit,0)/ranked.length;
-    state.history.push({gen:state.gen,fit:top.fit,apples:top.apples,avg:avgApples,avgFit:avgFit});
-    if(state.history.length>360)state.history.shift();
-    /* The champion is re-scored every generation (it sits at index 0 of the
-       population), so its record is refreshed against the games everyone
-       else just played. Without that, one lucky generation sets a record no
-       honest genome can ever beat and the run freezes on a mediocre snake.
-       The stored brain is always the champion — never a lucky one-off from
-       the current generation — so the saved brain and the chart can only
-       move forward. */
-    if(state.champIdx===0&&state.best)state.best.fit=state.best.fit*0.5+res.fit[0]*0.5;
-    if(!state.best||top.fit>state.best.fit){
-      state.best={fit:top.fit,apples:top.apples,gen:state.gen};
-      state.bestG=new Float32Array(top.g);state.bestApples=top.apples;state.staleGens=0;
+    /* The champion sits at index 0 every generation and gets re-scored on a
+       fresh set of random games each time, so a single sample of its fitness
+       is noisy — champEma smooths those samples into a reliable read on how
+       good the champion actually is. */
+    if(state.champIdx===0){
+      const champFit=res.fit[0];
+      state.champEma=state.champEma===undefined?champFit:state.champEma*0.85+champFit*0.15;
+    }
+    const champBaseline=state.champEma!==undefined?state.champEma:-Infinity;
+    const priorBest=state.best?state.best.fit:-Infinity;
+    const reference=Math.max(priorBest,champBaseline);
+    /* Additive, magnitude-aware margin — fitness can be negative early in a
+       run (e.g. a fresh random population that mostly dies fast), and a
+       multiplicative margin flips direction on negative numbers (x*1.01
+       is SMALLER than x when x<0), which would make "must beat by 1%"
+       silently mean "any tiny regression counts as a record". */
+    const recordMargin=reference===-Infinity?0:Math.max(1,Math.abs(reference)*0.01);
+
+    let verifiedFit=null,verifiedG=null,verifiedApples=null;
+    if(reference===-Infinity){
+      // nothing to verify against yet — first candidate this run.
+      verifiedFit=top.fit;verifiedG=top.g;verifiedApples=top.apples;
+    }else if(state.training&&top.fit>reference+recordMargin){
+      /* A single generation's fitness sample is noisy — as few as 3 games
+         per genome late in a run (GAMES_FLOOR) means an ordinary genome can
+         fluke a great score purely by luck. Promoting that fluke straight
+         to permanent champion is what caused a sharp spike followed by a
+         slow decline: the whole population starts breeding from a genome
+         that was never actually better, and it takes many generations of
+         honest re-evaluation to breed the mistake back out. Before locking
+         in a new record, re-test the challenger against the current
+         champion on a larger, shared batch of games — cheap, since it's
+         only ever 1-2 genomes here, not the whole population. */
+      try{
+        const champG=(state.bestG&&state.bestG.length===gl)?state.bestG:null;
+        const candidates=champG?[top.g,champG]:[top.g];
+        const verifyGames=Math.max(24,cfg.games*4);
+        const verify=await evaluate(candidates,{...cfg,games:verifyGames},gl,(Math.random()*2**31)|0);
+        const challengerFit=verify.fit[0];
+        const champVerifiedFit=champG?verify.fit[1]:-Infinity;
+        const verifiedReference=Math.max(champVerifiedFit,champBaseline);
+        const verifiedMargin=Math.max(1,Math.abs(verifiedReference)*0.01);
+        if(challengerFit>verifiedReference+verifiedMargin){
+          verifiedFit=challengerFit;verifiedG=top.g;verifiedApples=top.apples;
+        }
+      }catch(e){/* verification failed for some reason — treat as unconfirmed, not a record */}
+    }
+
+    if(verifiedG){
+      state.best={fit:verifiedFit,apples:verifiedApples,gen:state.gen};
+      state.bestG=new Float32Array(verifiedG);state.bestApples=verifiedApples;state.staleGens=0;
+      /* Blend into champEma rather than snapping straight to it, so even a
+         verified record doesn't jolt the plotted "best" line. */
+      state.champEma=champBaseline===-Infinity?verifiedFit:champBaseline*0.5+verifiedFit*0.5;
+      /* Remember the mutation/elite settings that were active when this
+         genuine improvement was found — but clamp what gets remembered.
+         Records very often land *because* mutation was cranked way up to
+         escape a plateau, so without a clamp this baseline would keep
+         drifting toward the aggressive "explore" settings that happened to
+         be active at the time, and the "stable" breeding pool below would
+         end up just as aggressive as the explore pool — which is exactly
+         what caused the whole population's average fitness to crash
+         together instead of just the exploring slice. Clamping keeps the
+         remembered baseline meaningfully calmer than the push ceiling no
+         matter what was active when the record landed. */
+      const found={
+        mutR:Math.min(15,+$("mutR").value),
+        mutS:Math.min(30,+$("mutS").value),
+        elite:+$("elite").value,
+      };
+      state.goodBase=state.goodBase?{
+        mutR:state.goodBase.mutR*0.7+found.mutR*0.3,
+        mutS:state.goodBase.mutS*0.7+found.mutS*0.3,
+        elite:state.goodBase.elite*0.7+found.elite*0.3,
+      }:found;
     }else state.staleGens=(state.staleGens||0)+1;
+    state.history.push({gen:state.gen,fit:state.champEma!==undefined?state.champEma:top.fit,apples:top.apples,avg:avgApples,avgFit:avgFit});
+    if(state.history.length>360)state.history.shift();
     state.brain={hidden:cfg.hidden,weights:new Float32Array(state.bestG||top.g),gen:state.gen,apples:Math.round((state.bestApples!==undefined?state.bestApples:top.apples)*10)/10,fitness:Math.round(state.best.fit),board:cfg.board};
     try{localStorage.setItem("snake-neuro-brain",brainToJSON())}catch(e){}
 
@@ -787,16 +870,26 @@ async function train(){
         }
       }
 
-      /* Auto-Turbo: actively push the population out of plateaus.
-         A flat best line can happen when the population converges around a
-         local optimum. In that case we deliberately increase mutation
-         strength/rate and temporarily reduce elitism. Once the average
-         fitness starts climbing again, mutation is eased back so the new
-         behavior can stabilize. */
+      /* Auto-Turbo: never let the search coast at a fixed setting.
+         Every 4 generations it checks whether a new record was set since
+         the last check (state.staleGens). Any generation without a new
+         record turns the pressure up a further notch — there is no tier
+         it settles into and stays at; the increase compounds the longer
+         the plateau runs (via `intensity`, which grows with staleness),
+         so a short stall gets a small nudge and a long one gets shoved
+         hard. It only eases back toward baseline once the population is
+         actually improving fast, and even then gradually rather than
+         snapping back — a genome or two of slower-but-real progress is
+         never mistaken for "done". */
       if(state.gen%4===0){
         const mutRmin=2,mutRmax=35,mutSmin=4,mutSmax=60;
-        const eliteFloor=Math.max(+$("elite").min,3),eliteCeil=Math.min(+$("elite").max,20);
-        const base={mutR:6,mutS:18,elite:8};
+        const eliteFloor=Math.max(+$("elite").min,5),eliteCeil=Math.min(+$("elite").max,20);
+        /* "Baseline" here isn't a fixed constant — it's whatever mutation/
+           elite combo was active the last time the population actually
+           found a genuine improvement (state.goodBase, updated near the
+           record-tracking code above). Early on, before any record has
+           been set this run, fall back to sane defaults. */
+        const base=state.goodBase||{mutR:6,mutS:18,elite:8};
         let mutR=+$("mutR").value,mutS=+$("mutS").value,eliteV=+$("elite").value;
 
         const hist=state.history;
@@ -808,45 +901,72 @@ async function train(){
         const olderAvg=older.length?older.reduce((s,p)=>s+p.avgFit,0)/older.length:recentAvg;
         const avgTrend=recentAvg-olderAvg;
 
-        let mode="hold";
-
-        // Escalate progressively instead of waiting forever at one mutation
-        // setting. The farther we are into a plateau, the harder we explore.
-        if(stale>=12 && avgTrend<=0.01)mode="explore";
-        if(stale>=30 && avgTrend<=0.02)mode="escape";
-        else if(avgTrend>0.08)mode="exploit";
-
-        if(mode==="escape"){
-          mutR=Math.min(mutRmax,mutR+3);
-          mutS=Math.min(mutSmax,mutS+5);
-          eliteV=Math.max(eliteFloor,eliteV-1);
-        }else if(mode==="explore"){
-          mutR=Math.min(mutRmax,mutR+2);
-          mutS=Math.min(mutSmax,mutS+3);
-          eliteV=Math.max(eliteFloor,eliteV-1);
-        }else if(mode==="exploit"){
+        let mode;
+        /* A short grace period before "push" kicks in: one or two
+           non-record checks in a row isn't strong evidence the search is
+           actually stuck — it could just be an unlucky batch of games.
+           Rather than reacting to every single stale check, auto-turbo can
+           now choose to just wait and watch for a bit, leaving mutation
+           and elite untouched, before deciding there's a real plateau to
+           push against. */
+        const HOLD_GRACE=8;
+        if(avgTrend>0.08){
+          // Population-wide fitness is climbing fast — consolidate the
+          // gain instead of continuing to churn a population that's
+          // already working.
+          mode="exploit";
           mutR=Math.max(mutRmin,mutR-1);
           mutS=Math.max(mutSmin,mutS-2);
           eliteV=Math.min(eliteCeil,eliteV+1);
+        }else if(stale>HOLD_GRACE){
+          // No new champion for a while now, well past the grace period —
+          // keep pushing, harder the longer it's been stuck. `intensity`
+          // climbs with staleness (capped for safety), so this never just
+          // holds a fixed elevated setting: as long as the score isn't
+          // improving, the pressure keeps building generation over
+          // generation.
+          mode="push";
+          const intensity=Math.min(6,1+Math.floor((stale-HOLD_GRACE)/20));
+          mutR=Math.min(mutRmax,mutR+intensity);
+          mutS=Math.min(mutSmax,mutS+intensity*2);
+          eliteV=Math.max(eliteFloor,eliteV-1);
+        }else if(stale>0){
+          // Within the grace period — hold everything exactly where it is
+          // and just keep watching. No slider changes, no ratcheting.
+          mode="hold";
         }else{
+          // Just set a new record but the population trend is still mild —
+          // ease toward baseline rather than snapping straight back to it.
+          mode="settle";
           const toward=(v,t,step)=>v===t?v:(v<t?Math.min(t,v+step):Math.max(t,v-step));
           mutR=toward(mutR,base.mutR,1);
           mutS=toward(mutS,base.mutS,2);
           eliteV=toward(eliteV,base.elite,1);
         }
 
-        mutR=Math.min(mutRmax,Math.max(mutRmin,mutR));
-        mutS=Math.min(mutSmax,Math.max(mutSmin,mutS));
-        eliteV=Math.min(eliteCeil,Math.max(eliteFloor,eliteV));
+        if(mode==="hold"){
+          /* Log sparingly — once when the hold starts, then only every few
+             checks — so a long stretch of quiet watching doesn't spam the
+             log the same way an actual adjustment would. */
+          state.holdChecks=(state.holdChecks||0)+1;
+          if(state.holdChecks===1||state.holdChecks%5===0){
+            log("auto-turbo: holding mutation "+mutR+"%/"+mutS+"% · elite "+eliteV+
+                "% steady — "+stale+" gen(s) since last record, within grace period, watching before adjusting");
+          }
+        }else{
+          state.holdChecks=0;
+          mutR=Math.min(mutRmax,Math.max(mutRmin,mutR));
+          mutS=Math.min(mutSmax,Math.max(mutSmin,mutS));
+          eliteV=Math.min(eliteCeil,Math.max(eliteFloor,eliteV));
 
-        if(mutR!==Math.round(cfg.mutRate*100)||mutS!==Math.round(cfg.mutSize*100)||eliteV!==Math.round(cfg.elite*100)){
-          cfg.mutRate=mutR/100;cfg.mutSize=mutS/100;cfg.elite=eliteV/100;
-          setSlider("mutR",mutR);setSlider("mutS",mutS);setSlider("elite",eliteV);
-          log("auto-turbo: mutation "+mutR+"%/"+mutS+"% · elite "+eliteV+"% ("+
-              (mode==="escape"?"plateau "+stale+" gens → HARD ESCAPE":
-               mode==="explore"?"plateau "+stale+" gens → exploring":
-               mode==="exploit"?"average fitness rising → stabilizing":"steady → baseline")+
-              ", avg fitness trend "+(avgTrend>=0?"+":"")+Math.round(avgTrend*100)/100+")");
+          if(mutR!==Math.round(cfg.mutRate*100)||mutS!==Math.round(cfg.mutSize*100)||eliteV!==Math.round(cfg.elite*100)){
+            cfg.mutRate=mutR/100;cfg.mutSize=mutS/100;cfg.elite=eliteV/100;
+            setSlider("mutR",mutR);setSlider("mutS",mutS);setSlider("elite",eliteV);
+            log("auto-turbo: mutation "+mutR+"%/"+mutS+"% · elite "+eliteV+"% ("+
+                (mode==="push"?"no new record in "+stale+" gens → pushing harder":
+                 mode==="exploit"?"fitness rising fast → consolidating":"easing toward baseline")+
+                ", avg fitness trend "+(avgTrend>=0?"+":"")+Math.round(avgTrend*100)/100+")");
+          }
         }
       }
     }
@@ -859,9 +979,32 @@ async function train(){
     state.champIdx=(state.bestG&&state.bestG.length===gl)?0:-1;
     if(state.champIdx===0)next.push(new Float32Array(state.bestG));
     for(let i=0;i<eliteN&&next.length<cfg.pop;i++)next.push(new Float32Array(ranked[i].g));
+
+    /* Long-plateau escape hatch: if even max mutation pressure hasn't found
+       a new record in a very long time, the whole population is probably
+       stuck in the same basin — mutating existing lineages harder just
+       reshuffles the same genes. A trickle of fully fresh random genomes
+       each generation gives real, unrelated genetic material a chance to
+       out-compete the stuck lineage instead. */
+    const freshN=(state.staleGens||0)>150?Math.max(2,Math.floor(cfg.pop*0.02)):0;
+    for(let i=0;i<freshN&&next.length<cfg.pop;i++)next.push(randomGenome(gl));
+
+    /* Only a slice of each new generation actually breeds at the elevated
+       "explore" mutation auto-turbo dials up while stale — mutating the
+       WHOLE population that hard is what crashed average fitness back down
+       every time a plateau triggered a push, showing up as the average-
+       fitness line climbing then abruptly resetting. Most offspring now
+       breed at a gentler, stable rate (anchored to the last known-good
+       baseline) so the population's average score can keep climbing while
+       a minority still explores hard enough to find an escape. */
+    const stableBase=state.goodBase||{mutR:6,mutS:18,elite:8};
+    const stableRate=Math.min(cfg.mutRate,stableBase.mutR/100);
+    const stableSize=Math.min(cfg.mutSize,stableBase.mutS/100);
+    const explorePortion=0.35;
     while(next.length<cfg.pop){
       const a=tournament(ranked,5),b=tournament(ranked,5);
-      next.push(mutate(crossover(a.g,b.g),cfg.mutRate,cfg.mutSize));
+      const explore=Math.random()<explorePortion;
+      next.push(mutate(crossover(a.g,b.g),explore?cfg.mutRate:stableRate,explore?cfg.mutSize:stableSize));
     }
     pop=next;
     await new Promise(r=>setTimeout(r,0));
@@ -871,6 +1014,7 @@ async function train(){
   state.training=false;
   $("start").textContent="Start training";
   $("start").classList.add("primary");
+  $("load").disabled=false;
   render();
   log("stopped at generation "+state.gen);
 }
@@ -1027,9 +1171,10 @@ $("start").onclick=()=>{
   if(state.training){state.training=false;$("start").textContent="Stopping…";return}
   state.training=true;state.best=null;state.gpuRate=0;state.cpuRate=0;state.gps=0;
   $("start").textContent="Stop training";$("start").classList.remove("primary");
+  $("load").disabled=true;
   log("training started · pop "+$("pop").value+" · "+$("hid").value+" hidden · "+($("workers").value)+" workers"+(gpu.ok?" + GPU":""));
   acquireWakeLock();
-  train().catch(e=>{console.error(e);state.training=false;killPool();releaseWakeLock();$("start").textContent="Start training";$("start").classList.add("primary");log("training failed: "+e.message)});
+  train().catch(e=>{console.error(e);state.training=false;killPool();releaseWakeLock();$("start").textContent="Start training";$("start").classList.add("primary");$("load").disabled=false;log("training failed: "+e.message)});
 };
 $("download").onclick=()=>{
   const json=brainToJSON();if(!json){log("no brain yet — train first");return}
@@ -1047,17 +1192,21 @@ $("savelocal").onclick=()=>{
   try{localStorage.setItem("snake-neuro-brain",json);log("saved brain to local storage (gen "+state.brain.gen+") — it will be picked up on next page load")}
   catch(e){log("could not save to local storage: "+e.message)}
 };
-$("load").onclick=()=>$("file").click();
+$("load").onclick=()=>{
+  if(state.training){log("stop training first — a brain loaded mid-run gets overwritten by the current run's own progress within a generation, so it wouldn't actually be used");return}
+  $("file").click();
+};
 $("file").onchange=async e=>{
   const f=e.target.files[0];if(!f)return;
+  if(state.training){e.target.value="";return}
   try{
     const d=JSON.parse(await f.text());
     if(!d.weights||!d.hidden)throw new Error("not a brain file");
     if(d.weights.length!==geneLen(d.hidden))throw new Error("weight count does not match hidden size");
     state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};
     $("hid").value=String(d.hidden);$("oHid").textContent=String(d.hidden);
-    if(!state.training){state.gen=state.brain.gen||0;state.history=[];state.best=null;render()}
-    log("loaded brain: gen "+state.brain.gen+" · "+state.brain.apples+" apples · "+d.hidden+" hidden — training will continue from it");
+    state.gen=state.brain.gen||0;state.history=[];state.best=null;render();
+    log("loaded brain: gen "+state.brain.gen+" · "+state.brain.apples+" apples · "+d.hidden+" hidden — will seed the next training run");
   }catch(err){log("could not load brain: "+err.message)}
   e.target.value="";
 };
@@ -1089,7 +1238,7 @@ function renderCaps(){
     const saved=localStorage.getItem("snake-neuro-brain");
     if(saved){const d=JSON.parse(saved);if(d&&d.weights&&d.hidden){state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};state.gen=state.brain.gen||0;log("found a saved brain (gen "+state.brain.gen+") — it will seed the first population")}}
   }catch(e){}
-  chart();
+  render();
 })();
 </script>
 </body>
