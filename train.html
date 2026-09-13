@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Snake AI — Full Throttle Trainer</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0f14;--panel:#121922;--panel2:#17212d;--line:#263241;--text:#eaf1f8;--muted:#8fa1b4;--accent:#2dd4bf;--accent2:#f59e0b;--bad:#fb7185}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:radial-gradient(circle at top left,#172033 0,#0b0f14 42%,#070a0e 100%);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:20px;display:grid;gap:16px}
+h1{margin:0;font-size:24px}p.sub{margin:4px 0 0;color:var(--muted)}
+.grid{display:grid;grid-template-columns:1fr 360px;gap:16px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg,#0f1620,#0c1118);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card h2{margin:0 0 10px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+button,select,input{font:inherit}
+button{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px 12px;min-height:42px;cursor:pointer}
+button:hover{border-color:#3e5369;background:#1d2a38}
+button.primary{background:linear-gradient(180deg,#22c7b5,#139b8d);border-color:#3be3d2;color:#05201d;font-weight:800}
+button.wide{width:100%}
+label{display:grid;gap:6px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+label b{color:var(--text)}
+input[type=range]{width:100%}
+.rows{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.stat{border:1px solid var(--line);background:#0d141c;border-radius:10px;padding:10px}
+.stat span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.stat strong{font-size:18px;font-variant-numeric:tabular-nums}
+canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:10px;background:#0d131b}
+.log{height:160px;overflow:auto;font:11px/1.5 ui-monospace,SFMono-Regular,monospace;color:var(--muted);white-space:pre-wrap}
+.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:5px 10px;color:var(--muted);font-size:12px}
+.badge b{color:var(--accent)}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>Snake AI — Full Throttle Trainer</h1>
+    <p class="sub">Same neuroevolution as the page trainer, but with no game to render: every CPU core runs games in a worker and (when available) the GPU simulates thousands of games per dispatch. Export the brain and load it in the game.</p>
+  </div>
+
+  <div id="caps" class="btnrow"></div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Progress</h2>
+      <div class="stats">
+        <div class="stat"><span>Generation</span><strong id="sGen">0</strong></div>
+        <div class="stat"><span>Best apples</span><strong id="sBest">-</strong></div>
+        <div class="stat"><span>Average apples</span><strong id="sAvg">-</strong></div>
+        <div class="stat"><span>Games / sec</span><strong id="sRate">idle</strong></div>
+        <div class="stat"><span>GPU share</span><strong id="sSplit">-</strong></div>
+        <div class="stat"><span>Gens / sec</span><strong id="sGps">-</strong></div>
+      </div>
+      <div style="height:12px"></div>
+      <canvas id="chart" width="900" height="340"></canvas>
+      <div style="height:12px"></div>
+      <div class="btnrow">
+        <button id="start" class="primary">Start training</button>
+        <button id="download">Download brain</button>
+        <button id="copy">Copy brain JSON</button>
+        <button id="load">Load brain</button>
+        <input id="file" type="file" accept=".json,application/json" hidden>
+      </div>
+      <div style="height:12px"></div>
+      <div class="log" id="log"></div>
+    </div>
+
+    <div class="card">
+      <h2>Settings</h2>
+      <label>Population <b id="oPop">2048</b><input id="pop" type="range" min="128" max="16384" step="128" value="2048"></label>
+      <label>Hidden neurons <b id="oHid">24</b><input id="hid" type="range" min="8" max="64" step="4" value="24"></label>
+      <div class="rows">
+        <label>Games / genome <b id="oGames">6</b><input id="games" type="range" min="1" max="16" step="1" value="6"></label>
+        <label>Move limit <b id="oSteps">1200</b><input id="steps" type="range" min="200" max="4000" step="100" value="1200"></label>
+        <label>Board <b id="oBoard">20</b><input id="board" type="range" min="8" max="24" step="1" value="20"></label>
+        <label>Elite % <b id="oElite">8</b><input id="elite" type="range" min="1" max="30" step="1" value="8"></label>
+        <label>Mutation % <b id="oMutR">6</b><input id="mutR" type="range" min="1" max="50" step="1" value="6"></label>
+        <label>Mutation size <b id="oMutS">18</b><input id="mutS" type="range" min="1" max="100" step="1" value="18"></label>
+        <label>CPU workers <b id="oWorkers">8</b><input id="workers" type="range" min="0" max="32" step="1" value="8"></label>
+        <label>Stop at gen (0=∞) <b id="oMaxGen">0</b><input id="maxGen" type="range" min="0" max="5000" step="50" value="0"></label>
+      </div>
+      <label>GPU usage <b id="oGpu">auto</b><input id="gpu" type="range" min="0" max="100" step="5" value="101"></label>
+      <p class="sub" style="font-size:12px">GPU usage at max = auto-balance: the trainer measures both backends every generation and gives each the share it can actually chew through.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const IN=32,OUT=4;
+const geneLen=h=>h*IN+h+OUT*h+OUT;
+const log=(m)=>{const l=$("log");l.textContent+=m+"\n";l.scrollTop=l.scrollHeight};
+
+/* =========================================================
+   CPU worker — identical game + net logic to the in-page trainer
+   ========================================================= */
+const WORKER_SRC=[
+"'use strict';",
+"var IN=32,OUT=4;",
+"var D4=[[0,-1],[1,0],[0,1],[-1,0]];",
+"var D8=[[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];",
+"function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}",
+"function sense(b,occ,hx,hy,fx,fy,dirIdx,tailIdx,inp){",
+"  var i=0;",
+"  for(var k=0;k<8;k++){",
+"    var dx=D8[k][0],dy=D8[k][1];",
+"    var lim=1e9;",
+"    if(dx>0){lim=b-hx}else if(dx<0){lim=hx+1}",
+"    if(dy>0){if(b-hy<lim)lim=b-hy}else if(dy<0){if(hy+1<lim)lim=hy+1}",
+"    var food=0,t;",
+"    if(dx!==0){t=(fx-hx)/dx;if(hy+dy*t!==fy)t=-1}else{t=(fy-hy)/dy;if(fx!==hx)t=-1}",
+"    if(t>=1&&t<lim)food=1/t;",
+"    var body=0,idx=hy*b+hx,st=dy*b+dx;",
+"    for(var q=1;q<lim;q++){idx+=st;if(occ[idx]){body=1/q;break}}",
+"    inp[i++]=1/lim;inp[i++]=food;inp[i++]=body}",
+"  for(var k2=0;k2<4;k2++)inp[i++]=k2===dirIdx?1:0;",
+"  for(var k3=0;k3<4;k3++)inp[i++]=k3===tailIdx?1:0;",
+"}",
+"function forward(w,off,hid,inp,out,sc){",
+"  var p=off,j,k,s;",
+"  for(j=0;j<hid;j++){s=0;for(k=0;k<IN;k++)s+=w[p++]*inp[k];sc[j]=s}",
+"  for(j=0;j<hid;j++)sc[j]=Math.tanh(sc[j]+w[p++]);",
+"  for(var o=0;o<OUT;o++){s=0;for(j=0;j<hid;j++)s+=w[p++]*sc[j];out[o]=s}",
+"  for(var o2=0;o2<OUT;o2++)out[o2]+=w[p++];",
+"}",
+"var W={n:-1,hid:-1};",
+"function bufs(n,hid){",
+"  if(W.n!==n){W.n=n;W.occ=new Uint8Array(n);W.sx=new Int16Array(n+4);W.sy=new Int16Array(n+4)}",
+"  if(W.hid!==hid){W.hid=hid;W.sc=new Float32Array(hid)}",
+"  if(!W.inp){W.inp=new Float32Array(IN);W.out=new Float32Array(OUT)}",
+"  return W}",
+"function play(w,off,cfg,seed){",
+"  var b=cfg.board,n=b*b,hid=cfg.hidden,rng=mulberry(seed),B=bufs(n,hid);",
+"  var occ=B.occ,inp=B.inp,out=B.out,sc=B.sc,sx=B.sx,sy=B.sy,cap=n+4;",
+"  occ.fill(0);",
+"  var m=Math.floor(b/2),h=0,len=3;",
+"  sx[0]=m+1;sy[0]=m;sx[1]=m;sy[1]=m;sx[2]=m-1;sy[2]=m;",
+"  for(var i=0;i<len;i++)occ[sy[i]*b+sx[i]]=1;",
+"  var fx=0,fy=0;",
+"  function spawn(){var free=n-len;if(free<=0){return false}var t=Math.floor(rng()*free),c=-1;",
+"    for(var q=0;q<n;q++){if(!occ[q]){if(t--<=0){c=q;break}}}",
+"    if(c<0)return false;fx=c%b;fy=(c-fx)/b;return true}",
+"  spawn();",
+"  var dirIdx=1,steps=0,apples=0,hunger=0,hungerCost=0,limit=cfg.starve+cfg.board*4,alive=true;",
+"  var maxSteps=cfg.maxSteps;",
+"  while(alive&&steps<maxSteps){",
+"    var ti=(h+len-1)%cap,pi=(h+len-2)%cap;",
+"    var tdx=Math.sign(sx[pi]-sx[ti]),tdy=Math.sign(sy[pi]-sy[ti]),tailIdx=0;",
+"    for(var d=0;d<4;d++)if(D4[d][0]===tdx&&D4[d][1]===tdy)tailIdx=d;",
+"    sense(b,occ,sx[h],sy[h],fx,fy,dirIdx,tailIdx,inp);",
+"    forward(w,off,hid,inp,out,sc);",
+"    var bi=0;for(var o=1;o<4;o++)if(out[o]>out[bi])bi=o;",
+"    if((bi+2)%4===dirIdx){var bj=-1;for(var o2=0;o2<4;o2++){if((o2+2)%4===dirIdx)continue;if(bj<0||out[o2]>out[bj])bj=o2}bi=bj}",
+"    dirIdx=bi;",
+"    var nx=sx[h]+D4[bi][0],ny=sy[h]+D4[bi][1];",
+"    if(nx<0||ny<0||nx>=b||ny>=b){alive=false;break}",
+"    var eats=(nx===fx&&ny===fy);",
+"    var tailX=sx[ti],tailY=sy[ti];",
+"    if(occ[ny*b+nx]&&!(!eats&&nx===tailX&&ny===tailY)){alive=false;break}",
+"    if(!eats){occ[tailY*b+tailX]=0}else{len++}",
+"    h=(h+cap-1)%cap;",
+"    sx[h]=nx;sy[h]=ny;occ[ny*b+nx]=1;",
+"    steps++;hunger++;",
+"    if(hunger>limit*0.5)hungerCost+=(hunger-limit*0.5)*cfg.hungerPenalty;",
+"    if(eats){apples++;hunger=0;if(!spawn())break}",
+"    if(hunger>limit)break;",
+"  }",
+"  var fit=apples*cfg.appleReward+steps*cfg.stepReward-hungerCost;",
+"  if(apples>0)fit+=Math.min(steps,apples*cfg.board*4)*0.1;",
+"  return{fit:fit,apples:apples,steps:steps}",
+"}",
+"onmessage=function(e){",
+"  var d=e.data,w=d.weights,cfg=d.cfg,count=d.count,gl=d.geneLen;",
+"  var fit=new Float32Array(count),app=new Float32Array(count),stp=new Float32Array(count);",
+"  for(var i=0;i<count;i++){",
+"    var f=0,a=0,s=0;",
+"    for(var g=0;g<cfg.games;g++){var r=play(w,i*gl,cfg,(d.seed+g*7919+i*104729)|0);f+=r.fit;a+=r.apples;s+=r.steps}",
+"    fit[i]=f/cfg.games;app[i]=a/cfg.games;stp[i]=s/cfg.games;",
+"  }",
+"  postMessage({id:d.id,fit:fit,app:app,stp:stp},[fit.buffer,app.buffer,stp.buffer]);",
+"};"
+].join("\n");
+
+let workerURL=null;
+function workerUrl(){if(!workerURL)workerURL=URL.createObjectURL(new Blob([WORKER_SRC],{type:"text/javascript"}));return workerURL}
+
+/* =========================================================
+   GPU backend — the same game simulated in a WGSL compute shader,
+   one invocation per (genome, game).
+   ========================================================= */
+const WGSL=`
+struct P {
+  board:u32, hidden:u32, geneLen:u32, games:u32,
+  maxSteps:u32, starve:u32, total:u32, seed:u32,
+  appleReward:f32, stepReward:f32, hungerPenalty:f32, pad:f32,
+};
+@group(0) @binding(0) var<uniform> p:P;
+@group(0) @binding(1) var<storage,read> W:array<f32>;
+@group(0) @binding(2) var<storage,read_write> R:array<f32>;
+
+const CAPMAX:u32 = 580u;   // board <= 24 -> 576 cells + 4
+const OCCW:u32 = 18u;      // 576 bits / 32
+const HIDMAX:u32 = 64u;
+
+var<private> occ:array<u32,18>;
+var<private> body:array<u32,580>;   // packed x | y<<16
+var<private> sc:array<f32,64>;
+var<private> inp:array<f32,32>;
+var<private> outv:array<f32,4>;
+var<private> rs:u32;
+
+fn rnd()->f32{
+  rs = rs + 0x6D2B79F5u;
+  var t:u32 = rs;
+  t = (t ^ (t >> 15u)) * (t | 1u);
+  t = t ^ (t + (t ^ (t >> 7u)) * (t | 61u));
+  return f32(t ^ (t >> 14u)) / 4294967296.0;
+}
+fn occGet(i:u32)->bool { return ((occ[i >> 5u] >> (i & 31u)) & 1u) == 1u; }
+fn occSet(i:u32){ occ[i >> 5u] = occ[i >> 5u] | (1u << (i & 31u)); }
+fn occClr(i:u32){ occ[i >> 5u] = occ[i >> 5u] & ~(1u << (i & 31u)); }
+fn d4x(d:u32)->i32 { if(d==0u){return 0;} if(d==1u){return 1;} if(d==2u){return 0;} return -1; }
+fn d4y(d:u32)->i32 { if(d==0u){return -1;} if(d==1u){return 0;} if(d==2u){return 1;} return 0; }
+fn d8x(k:u32)->i32 { var a=array<i32,8>(0,1,1,1,0,-1,-1,-1); return a[k]; }
+fn d8y(k:u32)->i32 { var a=array<i32,8>(-1,-1,0,1,1,1,0,-1); return a[k]; }
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid:vec3<u32>){
+  let t = gid.x;
+  if(t >= p.total){ return; }
+  let genome = t / p.games;
+  let game = t % p.games;
+  let off = genome * p.geneLen;
+  let b = i32(p.board);
+  let n = u32(b*b);
+  let cap = n + 4u;
+  let hid = p.hidden;
+
+  rs = p.seed + game*7919u + genome*104729u + 1u;
+  for(var i=0u;i<OCCW;i=i+1u){ occ[i]=0u; }
+
+  let m = b/2;
+  var h:u32 = 0u;
+  var len:u32 = 3u;
+  body[0] = u32(m+1) | (u32(m) << 16u);
+  body[1] = u32(m)   | (u32(m) << 16u);
+  body[2] = u32(m-1) | (u32(m) << 16u);
+  for(var i=0u;i<3u;i=i+1u){
+    let x = i32(body[i] & 0xffffu); let y = i32(body[i] >> 16u);
+    occSet(u32(y*b+x));
+  }
+
+  var fx:i32 = 0; var fy:i32 = 0;
+  var alive = true;
+  // spawn first apple
+  {
+    let free = n - len;
+    var k = i32(rnd()*f32(free));
+    var c:i32 = -1;
+    for(var q=0u;q<n;q=q+1u){ if(!occGet(q)){ if(k<=0){ c=i32(q); break; } k=k-1; } }
+    if(c<0){ alive=false; } else { fx = c % b; fy = c / b; }
+  }
+
+  var dirIdx:u32 = 1u;
+  var steps:u32 = 0u;
+  var apples:u32 = 0u;
+  var hunger:f32 = 0.0;
+  var hungerCost:f32 = 0.0;
+  let limit = f32(p.starve) + f32(b)*4.0;
+
+  loop {
+    if(!alive || steps >= p.maxSteps){ break; }
+    let ti = (h + len - 1u) % cap;
+    let pi = (h + len - 2u) % cap;
+    let tx = i32(body[ti] & 0xffffu); let ty = i32(body[ti] >> 16u);
+    let px = i32(body[pi] & 0xffffu); let py = i32(body[pi] >> 16u);
+    let tdx = sign(px - tx); let tdy = sign(py - ty);
+    var tailIdx:u32 = 0u;
+    for(var d=0u;d<4u;d=d+1u){ if(d4x(d)==tdx && d4y(d)==tdy){ tailIdx=d; } }
+
+    let hx = i32(body[h] & 0xffffu); let hy = i32(body[h] >> 16u);
+
+    // ---- sense (32 inputs) ----
+    var ii:u32 = 0u;
+    for(var k=0u;k<8u;k=k+1u){
+      let dx = d8x(k); let dy = d8y(k);
+      var lim:i32 = 1000000;
+      if(dx>0){ lim = b-hx; } else if(dx<0){ lim = hx+1; }
+      if(dy>0){ if(b-hy<lim){ lim=b-hy; } } else if(dy<0){ if(hy+1<lim){ lim=hy+1; } }
+      var food:f32 = 0.0;
+      var tt:f32 = -1.0;
+      if(dx!=0){ tt = f32(fx-hx)/f32(dx); if(f32(hy)+f32(dy)*tt != f32(fy)){ tt = -1.0; } }
+      else { tt = f32(fy-hy)/f32(dy); if(fx != hx){ tt = -1.0; } }
+      if(tt>=1.0 && tt<f32(lim)){ food = 1.0/tt; }
+      var bodyv:f32 = 0.0;
+      var idx:i32 = hy*b+hx;
+      let st:i32 = dy*b+dx;
+      for(var q:i32=1;q<lim;q=q+1){
+        idx = idx + st;
+        if(occGet(u32(idx))){ bodyv = 1.0/f32(q); break; }
+      }
+      inp[ii]=1.0/f32(lim); ii=ii+1u;
+      inp[ii]=food; ii=ii+1u;
+      inp[ii]=bodyv; ii=ii+1u;
+    }
+    for(var k=0u;k<4u;k=k+1u){ if(k==dirIdx){ inp[ii]=1.0; } else { inp[ii]=0.0; } ii=ii+1u; }
+    for(var k=0u;k<4u;k=k+1u){ if(k==tailIdx){ inp[ii]=1.0; } else { inp[ii]=0.0; } ii=ii+1u; }
+
+    // ---- forward ----
+    var wp:u32 = off;
+    for(var j=0u;j<hid;j=j+1u){
+      var s:f32 = 0.0;
+      for(var k=0u;k<32u;k=k+1u){ s = s + W[wp]*inp[k]; wp=wp+1u; }
+      sc[j]=s;
+    }
+    for(var j=0u;j<hid;j=j+1u){ sc[j]=tanh(sc[j]+W[wp]); wp=wp+1u; }
+    for(var o=0u;o<4u;o=o+1u){
+      var s:f32 = 0.0;
+      for(var j=0u;j<hid;j=j+1u){ s = s + W[wp]*sc[j]; wp=wp+1u; }
+      outv[o]=s;
+    }
+    for(var o=0u;o<4u;o=o+1u){ outv[o]=outv[o]+W[wp]; wp=wp+1u; }
+
+    var bi:u32 = 0u;
+    for(var o=1u;o<4u;o=o+1u){ if(outv[o]>outv[bi]){ bi=o; } }
+    if((bi+2u)%4u == dirIdx){
+      var bj:i32 = -1;
+      for(var o=0u;o<4u;o=o+1u){
+        if((o+2u)%4u == dirIdx){ continue; }
+        if(bj<0 || outv[o]>outv[u32(bj)]){ bj=i32(o); }
+      }
+      bi = u32(bj);
+    }
+    dirIdx = bi;
+
+    let nx = hx + d4x(bi);
+    let ny = hy + d4y(bi);
+    if(nx<0 || ny<0 || nx>=b || ny>=b){ alive=false; break; }
+    let eats = (nx==fx && ny==fy);
+    if(occGet(u32(ny*b+nx)) && !(!eats && nx==tx && ny==ty)){ alive=false; break; }
+    if(!eats){ occClr(u32(ty*b+tx)); } else { len = len + 1u; }
+    h = (h + cap - 1u) % cap;
+    body[h] = u32(nx) | (u32(ny) << 16u);
+    occSet(u32(ny*b+nx));
+    steps = steps + 1u;
+    hunger = hunger + 1.0;
+    if(hunger > limit*0.5){ hungerCost = hungerCost + (hunger - limit*0.5)*p.hungerPenalty; }
+    if(eats){
+      apples = apples + 1u;
+      hunger = 0.0;
+      let free = n - len;
+      if(free == 0u){ break; }
+      var k = i32(rnd()*f32(free));
+      var c:i32 = -1;
+      for(var q=0u;q<n;q=q+1u){ if(!occGet(q)){ if(k<=0){ c=i32(q); break; } k=k-1; } }
+      if(c<0){ break; }
+      fx = c % b; fy = c / b;
+    }
+    if(hunger > limit){ break; }
+  }
+
+  var fit = f32(apples)*p.appleReward + f32(steps)*p.stepReward - hungerCost;
+  if(apples > 0u){ fit = fit + min(f32(steps), f32(apples)*f32(b)*4.0)*0.1; }
+  R[t*3u+0u] = fit;
+  R[t*3u+1u] = f32(apples);
+  R[t*3u+2u] = f32(steps);
+}
+`;
+
+const gpu={ok:false,device:null,pipeline:null,layout:null,uni:null,wBuf:0,rBuf:0,readBuf:0,wSize:0,rSize:0,key:""};
+
+async function gpuInit(){
+  if(!navigator.gpu) return "no WebGPU in this browser";
+  let adapter=null;
+  try{ adapter=await navigator.gpu.requestAdapter({powerPreference:"high-performance"}); }catch(e){ return "adapter error: "+e.message }
+  if(!adapter) return "no GPU adapter available";
+  let device=null;
+  try{
+    device=await adapter.requestDevice({requiredLimits:{
+      maxStorageBufferBindingSize:Math.min(adapter.limits.maxStorageBufferBindingSize,1024*1024*1024),
+      maxBufferSize:Math.min(adapter.limits.maxBufferSize,1024*1024*1024),
+    }});
+  }catch(e){ try{ device=await adapter.requestDevice(); }catch(e2){ return "device request failed" } }
+  if(!device) return "device request failed";
+  device.lost.then(info=>{ if(info.reason!=="destroyed"){ gpu.ok=false; log("GPU lost ("+info.reason+") — continuing on CPU only"); }});
+  const module=device.createShaderModule({code:WGSL});
+  const info=await module.getCompilationInfo?.();
+  if(info&&info.messages.some(m=>m.type==="error")){
+    return "shader error: "+info.messages.filter(m=>m.type==="error").map(m=>m.message).join("; ");
+  }
+  gpu.device=device;
+  gpu.pipeline=device.createComputePipeline({layout:"auto",compute:{module,entryPoint:"main"}});
+  gpu.uni=device.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+  gpu.ok=true;
+  gpu.info=(adapter.info&&(adapter.info.vendor||adapter.info.architecture))?[adapter.info.vendor,adapter.info.architecture,adapter.info.device].filter(Boolean).join(" "):"WebGPU device";
+  gpu.maxStorage=device.limits.maxStorageBufferBindingSize;
+  return null;
+}
+
+function gpuEnsureBuffers(wBytes,rBytes){
+  const d=gpu.device;
+  if(gpu.wSize<wBytes){
+    if(gpu.wBufObj)gpu.wBufObj.destroy();
+    gpu.wSize=Math.ceil(wBytes*1.3/256)*256;
+    gpu.wBufObj=d.createBuffer({size:gpu.wSize,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
+  }
+  if(gpu.rSize<rBytes){
+    if(gpu.rBufObj)gpu.rBufObj.destroy();
+    if(gpu.readObj)gpu.readObj.destroy();
+    gpu.rSize=Math.ceil(rBytes*1.3/256)*256;
+    gpu.rBufObj=d.createBuffer({size:gpu.rSize,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC});
+    gpu.readObj=d.createBuffer({size:gpu.rSize,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST});
+  }
+  gpu.bind=gpu.device.createBindGroup({layout:gpu.pipeline.getBindGroupLayout(0),entries:[
+    {binding:0,resource:{buffer:gpu.uni}},
+    {binding:1,resource:{buffer:gpu.wBufObj,size:gpu.wSize}},
+    {binding:2,resource:{buffer:gpu.rBufObj,size:gpu.rSize}},
+  ]});
+}
+
+/* Evaluate `genomes` (array of Float32Array) on the GPU.
+   Returns {fit,app,stp} averaged over cfg.games, like the worker does.
+   Work is split into dispatches of bounded size so a huge population never
+   trips the driver's watchdog on a single submit. */
+async function gpuEvaluate(genomes,cfg,gl,seed){
+  const perDispatch=Math.max(64,Math.min(genomes.length,Math.ceil(65536/Math.max(1,cfg.games))));
+  if(genomes.length<=perDispatch)return gpuPass(genomes,cfg,gl,seed);
+  const fit=new Float32Array(genomes.length),app=new Float32Array(genomes.length),stp=new Float32Array(genomes.length);
+  for(let i=0;i<genomes.length;i+=perDispatch){
+    const part=genomes.slice(i,i+perDispatch);
+    const r=await gpuPass(part,cfg,gl,(seed+i*7919)|0);
+    fit.set(r.fit,i);app.set(r.app,i);stp.set(r.stp,i);
+  }
+  return {fit,app,stp};
+}
+async function gpuPass(genomes,cfg,gl,seed){
+  const d=gpu.device;
+  const count=genomes.length;
+  const total=count*cfg.games;
+  const flat=new Float32Array(count*gl);
+  for(let i=0;i<count;i++)flat.set(genomes[i],i*gl);
+  gpuEnsureBuffers(flat.byteLength,total*3*4);
+  d.queue.writeBuffer(gpu.wBufObj,0,flat);
+  const u=new ArrayBuffer(48);
+  new Uint32Array(u,0,8).set([cfg.board,cfg.hidden,gl,cfg.games,cfg.maxSteps,cfg.starve,total,seed>>>0]);
+  new Float32Array(u,32,4).set([cfg.appleReward,cfg.stepReward,cfg.hungerPenalty,0]);
+  d.queue.writeBuffer(gpu.uni,0,u);
+
+  const enc=d.createCommandEncoder();
+  const pass=enc.beginComputePass();
+  pass.setPipeline(gpu.pipeline);
+  pass.setBindGroup(0,gpu.bind);
+  pass.dispatchWorkgroups(Math.ceil(total/64));
+  pass.end();
+  enc.copyBufferToBuffer(gpu.rBufObj,0,gpu.readObj,0,total*3*4);
+  d.queue.submit([enc.finish()]);
+  await gpu.readObj.mapAsync(GPUMapMode.READ,0,total*3*4);
+  const raw=new Float32Array(gpu.readObj.getMappedRange(0,total*3*4).slice(0));
+  gpu.readObj.unmap();
+
+  const fit=new Float32Array(count),app=new Float32Array(count),stp=new Float32Array(count);
+  for(let i=0;i<count;i++){
+    let f=0,a=0,s=0;
+    for(let g=0;g<cfg.games;g++){const o=(i*cfg.games+g)*3;f+=raw[o];a+=raw[o+1];s+=raw[o+2]}
+    fit[i]=f/cfg.games;app[i]=a/cfg.games;stp[i]=s/cfg.games;
+  }
+  return {fit,app,stp};
+}
+
+/* =========================================================
+   Genetic algorithm (same operators, rewards and adaptive game
+   budget as the in-page trainer)
+   ========================================================= */
+const state={training:false,pool:[],gen:0,best:null,brain:null,history:[],evaluated:0,started:0,
+  stepAvg:0,gamesEff:0,gpuRate:0,cpuRate:0,gpuShare:0.5,lastRender:0,gps:0};
+
+function cfgRead(){
+  return{
+    pop:+$("pop").value,
+    hidden:+$("hid").value,
+    games:+$("games").value,
+    board:+$("board").value,
+    mutRate:+$("mutR").value/100,
+    mutSize:+$("mutS").value/100,
+    elite:+$("elite").value/100,
+    workers:+$("workers").value,
+    maxGen:+$("maxGen").value,
+    maxSteps:+$("steps").value,
+    starve:60,appleReward:300,stepReward:0.2,hungerPenalty:0.05,
+  };
+}
+function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+function randomGenome(gl){const g=new Float32Array(gl);for(let i=0;i<gl;i++)g[i]=gauss()*0.5;return g}
+function mutate(g,rate,size){for(let i=0;i<g.length;i++)if(Math.random()<rate)g[i]+=gauss()*size;return g}
+function crossover(a,b){const c=new Float32Array(a.length);const cut=Math.floor(Math.random()*a.length);for(let i=0;i<a.length;i++)c[i]=i<cut?a[i]:b[i];return c}
+function tournament(ranked,k){let best=null;for(let i=0;i<k;i++){const c=ranked[Math.floor(Math.random()*ranked.length)];if(!best||c.fit>best.fit)best=c}return best}
+
+function spawnPool(count){
+  killPool();
+  for(let i=0;i<count;i++)state.pool.push(new Worker(workerUrl()));
+}
+function killPool(){state.pool.forEach(w=>w.terminate());state.pool=[]}
+
+/* CPU half: shared task queue so one slow core can't hold up a generation */
+function cpuEvaluate(genomes,cfg,gl,baseSeed,offset){
+  const workers=state.pool;
+  const out=[];
+  if(!workers.length||!genomes.length)return Promise.resolve(out);
+  const per=Math.max(2,Math.ceil(genomes.length/(workers.length*4)));
+  const tasks=[];
+  for(let i=0;i<genomes.length;i+=per)tasks.push({from:i,count:Math.min(per,genomes.length-i)});
+  let next=0;
+  return Promise.all(workers.map(w=>new Promise(resolve=>{
+    const feed=()=>{
+      if(next>=tasks.length||!state.training){w.onmessage=null;resolve();return}
+      const task=tasks[next++];
+      const flat=new Float32Array(task.count*gl);
+      for(let i=0;i<task.count;i++)flat.set(genomes[task.from+i],i*gl);
+      w.onmessage=e=>{out.push({from:task.from,count:task.count,fit:e.data.fit,app:e.data.app,stp:e.data.stp});feed()};
+      w.postMessage({id:task.from,weights:flat,count:task.count,geneLen:gl,cfg,seed:(baseSeed+(offset+task.from)*104729)|0},[flat.buffer]);
+    };
+    feed();
+  }))).then(()=>out);
+}
+
+async function evaluate(pop,cfg,gl,seed){
+  const fit=new Float32Array(pop.length),app=new Float32Array(pop.length),stp=new Float32Array(pop.length);
+  const manual=+$("gpu").value;
+  let share=0;
+  if(gpu.ok&&state.pool.length===0)share=1;
+  else if(!gpu.ok)share=0;
+  else if(manual<=100)share=manual/100;
+  else{
+    const g=state.gpuRate||1,c=state.cpuRate||1;
+    share=g/(g+c);
+    share=Math.min(0.97,Math.max(0.03,share));
+  }
+  state.gpuShare=share;
+  let nGpu=Math.round(pop.length*share);
+  if(!gpu.ok)nGpu=0;
+  else if(!state.pool.length)nGpu=pop.length;
+  else nGpu=Math.min(pop.length,Math.max(1,nGpu));
+  const gpuSlice=pop.slice(0,nGpu);
+  const cpuSlice=pop.slice(nGpu);
+
+  const jobs=[];
+  if(gpuSlice.length){
+    const t0=performance.now();
+    jobs.push(gpuEvaluate(gpuSlice,cfg,gl,seed).then(r=>{
+      const ms=performance.now()-t0;
+      const rate=gpuSlice.length*cfg.games/(ms/1000);
+      state.gpuRate=state.gpuRate?state.gpuRate*0.6+rate*0.4:rate;
+      fit.set(r.fit,0);app.set(r.app,0);stp.set(r.stp,0);
+    }).catch(e=>{gpu.ok=false;log("GPU pass failed → CPU only: "+e.message)}));
+  }
+  if(cpuSlice.length){
+    const t0=performance.now();
+    jobs.push(cpuEvaluate(cpuSlice,cfg,gl,seed,nGpu).then(chunks=>{
+      const ms=performance.now()-t0;
+      const rate=cpuSlice.length*cfg.games/(ms/1000);
+      state.cpuRate=state.cpuRate?state.cpuRate*0.6+rate*0.4:rate;
+      chunks.forEach(c=>{
+        for(let i=0;i<c.count;i++){
+          const d=nGpu+c.from+i;
+          fit[d]=c.fit[i];app[d]=c.app[i];stp[d]=c.stp[i];
+        }
+      });
+    }));
+  }
+  await Promise.all(jobs);
+  return {fit,app,stp};
+}
+
+async function train(){
+  const cfg=cfgRead();
+  const gl=geneLen(cfg.hidden);
+  spawnPool(gpu.ok?Math.max(0,cfg.workers):Math.max(1,cfg.workers));
+  let pop=[];
+  if(state.brain&&state.brain.hidden===cfg.hidden){
+    pop.push(new Float32Array(state.brain.weights));
+    while(pop.length<cfg.pop)pop.push(mutate(new Float32Array(state.brain.weights),cfg.mutRate,cfg.mutSize));
+    log("seeded population from loaded brain (gen "+(state.brain.gen||0)+")");
+  }else{
+    for(let i=0;i<cfg.pop;i++)pop.push(randomGenome(gl));
+  }
+  state.gen=0;state.history=[];state.started=performance.now();state.evaluated=0;state.stepAvg=0;state.gamesEff=cfg.games;
+  let lastGenTime=performance.now();
+
+  while(state.training&&(cfg.maxGen===0||state.gen<cfg.maxGen)){
+    /* keep the simulated work per generation roughly constant: as snakes
+       survive longer, score each genome on fewer games (never below 1) */
+    const budget=cfg.games*400;
+    const games=state.stepAvg>0?Math.max(1,Math.min(cfg.games,Math.round(budget/state.stepAvg))):cfg.games;
+    state.gamesEff=games;
+    const res=await evaluate(pop,{...cfg,games},gl,(Math.random()*2**31)|0);
+    if(!state.training)break;
+
+    const ranked=pop.map((g,i)=>({g,fit:res.fit[i],apples:res.app[i],steps:res.stp[i]}));
+    ranked.sort((a,b)=>b.fit-a.fit);
+    state.gen++;state.evaluated+=pop.length*games;
+    const stepAvg=ranked.reduce((s,r)=>s+r.steps,0)/ranked.length;
+    state.stepAvg=state.stepAvg?state.stepAvg*0.7+stepAvg*0.3:stepAvg;
+    const top=ranked[0];
+    const avgApples=ranked.reduce((s,r)=>s+r.apples,0)/ranked.length;
+    state.history.push({gen:state.gen,fit:top.fit,apples:top.apples,avg:avgApples});
+    if(state.history.length>360)state.history.shift();
+    if(!state.best||top.fit>state.best.fit)state.best={fit:top.fit,apples:top.apples,gen:state.gen};
+    state.brain={hidden:cfg.hidden,weights:new Float32Array(top.g),gen:state.gen,apples:Math.round(top.apples*10)/10,fitness:Math.round(top.fit),board:cfg.board};
+    try{localStorage.setItem("snake-neuro-brain",brainToJSON())}catch(e){}
+
+    const now=performance.now();
+    state.gps=state.gps?state.gps*0.8+(1000/(now-lastGenTime))*0.2:1000/(now-lastGenTime);
+    lastGenTime=now;
+    if(now-state.lastRender>200){state.lastRender=now;render(avgApples)}
+
+    const eliteN=Math.max(1,Math.floor(cfg.pop*cfg.elite));
+    const next=[];
+    for(let i=0;i<eliteN;i++)next.push(new Float32Array(ranked[i].g));
+    while(next.length<cfg.pop){
+      const a=tournament(ranked,5),b=tournament(ranked,5);
+      next.push(mutate(crossover(a.g,b.g),cfg.mutRate,cfg.mutSize));
+    }
+    pop=next;
+    await new Promise(r=>setTimeout(r,0));
+  }
+  killPool();
+  state.training=false;
+  $("start").textContent="Start training";
+  $("start").classList.add("primary");
+  render();
+  log("stopped at generation "+state.gen);
+}
+
+/* =========================================================
+   UI
+   ========================================================= */
+function render(avg){
+  const h=state.history[state.history.length-1];
+  $("sGen").textContent=String(state.gen);
+  $("sBest").textContent=h?String(Math.round(h.apples*10)/10):"-";
+  $("sAvg").textContent=(avg!==undefined)?String(Math.round(avg*10)/10):(h?String(Math.round(h.avg*10)/10):"-");
+  const secs=(performance.now()-state.started)/1000;
+  $("sRate").textContent=state.training&&secs>0?Math.round(state.evaluated/secs).toLocaleString()+" ("+state.gamesEff+"/genome)":"idle";
+  $("sSplit").textContent=gpu.ok?Math.round(state.gpuShare*100)+"% GPU / "+(100-Math.round(state.gpuShare*100))+"% CPU":"CPU only";
+  $("sGps").textContent=state.training?(Math.round(state.gps*10)/10).toFixed(1):"-";
+  chart();
+}
+function chart(){
+  const c=$("chart"),g=c.getContext("2d"),W=c.width,H=c.height;
+  g.fillStyle="#0d131b";g.fillRect(0,0,W,H);
+  const hist=state.history;if(hist.length<2)return;
+  const max=Math.max(1,...hist.map(p=>p.apples));
+  const px=i=>i/(hist.length-1)*(W-12)+6;
+  const py=v=>H-8-(v/max)*(H-24);
+  g.strokeStyle="#2dd4bf";g.lineWidth=3;g.beginPath();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.apples)):g.moveTo(px(i),py(p.apples)));g.stroke();
+  g.strokeStyle="#f59e0b99";g.lineWidth=2;g.beginPath();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.avg)):g.moveTo(px(i),py(p.avg)));g.stroke();
+  g.fillStyle="#8fa1b4";g.font="18px ui-monospace,monospace";
+  g.fillText("best "+Math.round(max*10)/10+" apples  ·  gen "+state.gen,12,26);
+}
+function brainToJSON(){
+  if(!state.brain)return null;
+  return JSON.stringify({
+    format:"snake-ai-lab-brain",version:1,
+    hidden:state.brain.hidden,inputs:IN,outputs:OUT,
+    gen:state.brain.gen,apples:state.brain.apples,fitness:state.brain.fitness,board:state.brain.board,
+    saved:new Date().toISOString(),
+    weights:Array.from(state.brain.weights).map(v=>Math.round(v*1e5)/1e5),
+  });
+}
+
+["pop","hid","games","steps","board","elite","mutR","mutS","workers","maxGen"].forEach(k=>{
+  const cap=k.charAt(0).toUpperCase()+k.slice(1);
+  const out=$("o"+cap);
+  const sync=()=>{out.textContent=$(k).value};
+  $(k).addEventListener("input",sync);sync();
+});
+$("gpu").addEventListener("input",()=>{const v=+$("gpu").value;$("oGpu").textContent=v>100?"auto":v+"%"});
+$("oGpu").textContent="auto";
+
+$("start").onclick=()=>{
+  if(state.training){state.training=false;$("start").textContent="Stopping…";return}
+  state.training=true;state.best=null;state.gpuRate=0;state.cpuRate=0;state.gps=0;
+  $("start").textContent="Stop training";$("start").classList.remove("primary");
+  log("training started · pop "+$("pop").value+" · "+$("hid").value+" hidden · "+($("workers").value)+" workers"+(gpu.ok?" + GPU":""));
+  train().catch(e=>{console.error(e);state.training=false;killPool();$("start").textContent="Start training";$("start").classList.add("primary");log("training failed: "+e.message)});
+};
+$("download").onclick=()=>{
+  const json=brainToJSON();if(!json){log("no brain yet — train first");return}
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));
+  a.download="snake-brain-gen"+state.brain.gen+".json";a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+};
+$("copy").onclick=async()=>{
+  const json=brainToJSON();if(!json){log("no brain yet — train first");return}
+  try{await navigator.clipboard.writeText(json);log("brain JSON copied to clipboard")}catch(e){log("clipboard blocked — use Download instead")}
+};
+$("load").onclick=()=>$("file").click();
+$("file").onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const d=JSON.parse(await f.text());
+    if(!d.weights||!d.hidden)throw new Error("not a brain file");
+    if(d.weights.length!==geneLen(d.hidden))throw new Error("weight count does not match hidden size");
+    state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};
+    $("hid").value=String(d.hidden);$("oHid").textContent=String(d.hidden);
+    log("loaded brain: gen "+state.brain.gen+" · "+state.brain.apples+" apples · "+d.hidden+" hidden — training will continue from it");
+  }catch(err){log("could not load brain: "+err.message)}
+  e.target.value="";
+};
+
+/* capability probe */
+(async()=>{
+  const cores=navigator.hardwareConcurrency||4;
+  $("workers").max=String(Math.max(1,cores*2));
+  $("workers").value=String(cores);
+  $("oWorkers").textContent=String(cores);
+  const caps=[];
+  caps.push("<span class='badge'>CPU threads <b>"+cores+"</b></span>");
+  if(navigator.deviceMemory)caps.push("<span class='badge'>RAM <b>"+navigator.deviceMemory+" GB</b></span>");
+  const err=await gpuInit();
+  if(gpu.ok){
+    caps.push("<span class='badge'>GPU <b>"+(gpu.info||"WebGPU")+"</b></span>");
+    caps.push("<span class='badge'>GPU buffer <b>"+Math.round(gpu.maxStorage/1048576)+" MB</b></span>");
+    log("GPU compute ready — games are simulated on the GPU and CPU at the same time");
+  }else{
+    caps.push("<span class='badge' style='border-color:#5d3242'>GPU <b style='color:var(--bad)'>unavailable</b></span>");
+    log("GPU path off ("+err+") — running on all CPU cores only");
+  }
+  $("caps").innerHTML=caps.join("");
+  try{
+    const saved=localStorage.getItem("snake-neuro-brain");
+    if(saved){const d=JSON.parse(saved);if(d&&d.weights&&d.hidden){state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};log("found a saved brain (gen "+state.brain.gen+") — it will seed the first population")}}
+  }catch(e){}
+  chart();
+})();
+</script>
+</body>
+</html>
