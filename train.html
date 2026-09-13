@@ -476,7 +476,7 @@ async function gpuPass(genomes,cfg,gl,seed){
    budget as the in-page trainer)
    ========================================================= */
 const state={training:false,pool:[],gen:0,best:null,brain:null,history:[],evaluated:0,started:0,
-  stepAvg:0,gamesEff:0,gpuRate:0,cpuRate:0,gpuShare:0.5,lastRender:0,gps:0};
+  stepAvg:0,gamesEff:0,gpuRate:0,cpuRate:0,gpuShare:0.5,lastRender:0,gps:0,hwScale:1};
 
 function cfgRead(){
   return{
@@ -601,9 +601,21 @@ async function train(){
     /* keep the simulated work per generation roughly constant: as snakes
        survive longer, score each genome on fewer games (never below 1) */
     const budget=cfg.games*400;
-    const games=state.stepAvg>0?Math.max(1,Math.min(cfg.games,Math.round(budget/state.stepAvg))):cfg.games;
+    const targetGames=state.stepAvg>0?Math.max(1,Math.min(cfg.games,Math.round(budget/state.stepAvg))):cfg.games;
+    /* hwScale backs this off further when a generation is taking too long
+       on this hardware (e.g. a mobile GPU), converging toward whatever
+       games-per-genome this device can actually push through in ~300ms —
+       instead of always running the configured max and staying slow forever */
+    const games=Math.max(1,Math.round(targetGames*state.hwScale));
     state.gamesEff=games;
+    const evalT0=performance.now();
     const res=await evaluate(pop,{...cfg,games},gl,(Math.random()*2**31)|0);
+    const evalMs=performance.now()-evalT0;
+    const targetMs=300;
+    const nextScale=Math.min(1,Math.max(0.05,state.hwScale*(targetMs/Math.max(1,evalMs))));
+    const oldScale=state.hwScale;
+    state.hwScale=state.hwScale?state.hwScale*0.6+nextScale*0.4:nextScale;
+    if(state.gen===0&&state.hwScale<oldScale*0.7)log("this GPU/CPU is slower than expected — throttling games/genome to keep generations responsive");
     if(!state.training)break;
 
     const ranked=pop.map((g,i)=>({g,fit:res.fit[i],apples:res.app[i],steps:res.stp[i]}));
