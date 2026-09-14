@@ -79,7 +79,7 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
       </label>
       <p class="sub" style="font-size:12px;margin:0 0 12px" id="turboHelp">Locks population, games/genome, worker count and GPU split, then hill-climbs population up or down every generation to find the most this CPU+GPU combo can push through — backing off only just enough to stay smooth, never coasting at low usage or collapsing to nothing. Also locks Elite %, Mutation % and Mutation size, and self-tunes those toward whatever keeps the snake actually improving: it pushes mutation up to explore when progress stalls, and eases back down while raising Elite % to lock in gains once it's climbing again — elitism always keeps the current best genome untouched, so it can't regress no matter how far mutation swings.</p>
       <label>Population <b id="oPop">2048</b><input id="pop" type="range" min="128" max="16384" step="128" value="2048"></label>
-      <label>Hidden neurons <b id="oHid">24</b><input id="hid" type="range" min="8" max="64" step="4" value="24"></label>
+      <label>Hidden neurons <b id="oHid">32</b><input id="hid" type="range" min="8" max="64" step="4" value="32"></label>
       <div class="rows">
         <label>Games / genome <b id="oGames">6</b><input id="games" type="range" min="1" max="16" step="1" value="6"></label>
         <label>Move limit <b id="oSteps">1200</b><input id="steps" type="range" min="200" max="4000" step="100" value="1200"></label>
@@ -108,7 +108,35 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
-const IN=32,OUT=4;
+/* =========================================================
+   Observation vector (28 inputs) — replaces the old 24-ray/4-dir/4-tail
+   32-input layout. Rays alone told the net "how far to the nearest wall/
+   food/body in 8 directions" but never told it WHERE it actually was on
+   the board or where the apple was relative to it in absolute terms —
+   so two very different board states (e.g. hugging the left wall vs. the
+   right wall) could look almost identical to the net if the local ray
+   pattern happened to match, which is a big part of why trained snakes
+   would confidently walk into a wall. The new layout keeps the useful
+   parts of the old rays (body-only, still 8 directions — this is what
+   lets it sense a forming trap) and adds the information that was
+   actually missing:
+     0-3   immediate collision danger one step away, in absolute
+           up/right/down/left order (matches D4/ORDER everywhere else)
+     4-7   current heading, one-hot
+     8-11  tail heading, one-hot (helps it reason about its own body)
+     12-13 apple position relative to the head (dx,dy), normalized by
+           board size — replaces the old per-ray "food if aligned" signal
+           with something that works no matter which direction the food
+           is in, not just the 8 ray directions
+     14-15 head position, normalized to the board — without this the net
+           has no way to know it's already backed into a corner
+     16-19 distance to each wall, cardinal directions, normalized
+     20-27 body-only ray distance, 8 directions (unchanged from before)
+   Same 28-input layout is implemented three times — CPU worker below,
+   the WGSL compute shader further down, and neuroSense() in index.html
+   for live inference — and must stay in exact lockstep, or a brain
+   trained on one backend gets fed different numbers on another. */
+const IN=28,OUT=4;
 const geneLen=h=>h*IN+h+OUT*h+OUT;
 const log=(m)=>{const l=$("log");l.textContent+=m+"\n";l.scrollTop=l.scrollHeight};
 
@@ -123,25 +151,40 @@ const log=(m)=>{const l=$("log");l.textContent+=m+"\n";l.scrollTop=l.scrollHeigh
    ========================================================= */
 const WORKER_SRC=[
 "'use strict';",
-"var IN=32,OUT=4;",
+"var IN=28,OUT=4;",
+"var VISITN=8;",
 "var D4=[[0,-1],[1,0],[0,1],[-1,0]];",
 "var D8=[[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];",
 "function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}",
+/* 28-input sense: danger[4] + dir[4] + tail[4] + relApple[2] + headPos[2] +
+   wallDist[4] + bodyRay[8]. See the big comment above IN in the main
+   document for why each group is there — this must match the WGSL
+   shader's sense block and index.html's neuroSense() exactly. */
 "function sense(b,occ,hx,hy,fx,fy,dirIdx,tailIdx,inp){",
 "  var i=0;",
-"  for(var k=0;k<8;k++){",
-"    var dx=D8[k][0],dy=D8[k][1];",
+"  for(var d=0;d<4;d++){",
+"    var nx=hx+D4[d][0],ny=hy+D4[d][1];",
+"    inp[i++]=(nx<0||ny<0||nx>=b||ny>=b||occ[ny*b+nx])?1:0;",
+"  }",
+"  for(var k=0;k<4;k++)inp[i++]=k===dirIdx?1:0;",
+"  for(var k2=0;k2<4;k2++)inp[i++]=k2===tailIdx?1:0;",
+"  inp[i++]=(fx-hx)/b;",
+"  inp[i++]=(fy-hy)/b;",
+"  inp[i++]=hx/(b-1);",
+"  inp[i++]=hy/(b-1);",
+"  inp[i++]=hy/b;",
+"  inp[i++]=(b-1-hx)/b;",
+"  inp[i++]=(b-1-hy)/b;",
+"  inp[i++]=hx/b;",
+"  for(var k3=0;k3<8;k3++){",
+"    var dx=D8[k3][0],dy=D8[k3][1];",
 "    var lim=1e9;",
 "    if(dx>0){lim=b-hx}else if(dx<0){lim=hx+1}",
 "    if(dy>0){if(b-hy<lim)lim=b-hy}else if(dy<0){if(hy+1<lim)lim=hy+1}",
-"    var food=0,t;",
-"    if(dx!==0){t=(fx-hx)/dx;if(hy+dy*t!==fy)t=-1}else{t=(fy-hy)/dy;if(fx!==hx)t=-1}",
-"    if(t>=1&&t<lim)food=1/t;",
 "    var body=0,idx=hy*b+hx,st=dy*b+dx;",
 "    for(var q=1;q<lim;q++){idx+=st;if(occ[idx]){body=1/q;break}}",
-"    inp[i++]=1/lim;inp[i++]=food;inp[i++]=body}",
-"  for(var k2=0;k2<4;k2++)inp[i++]=k2===dirIdx?1:0;",
-"  for(var k3=0;k3<4;k3++)inp[i++]=k3===tailIdx?1:0;",
+"    inp[i++]=body;",
+"  }",
 "}",
 "function forward(w,off,hid,inp,out,sc){",
 "  var p=off,j,k,s;",
@@ -154,11 +197,11 @@ const WORKER_SRC=[
 "function bufs(n,hid){",
 "  if(W.n!==n){W.n=n;W.occ=new Uint8Array(n);W.sx=new Int16Array(n+4);W.sy=new Int16Array(n+4)}",
 "  if(W.hid!==hid){W.hid=hid;W.sc=new Float32Array(hid)}",
-"  if(!W.inp){W.inp=new Float32Array(IN);W.out=new Float32Array(OUT)}",
+"  if(!W.inp){W.inp=new Float32Array(IN);W.out=new Float32Array(OUT);W.visit=new Int32Array(VISITN)}",
 "  return W}",
 "function play(w,off,cfg,seed){",
 "  var b=cfg.board,n=b*b,hid=cfg.hidden,rng=mulberry(seed),B=bufs(n,hid);",
-"  var occ=B.occ,inp=B.inp,out=B.out,sc=B.sc,sx=B.sx,sy=B.sy,cap=n+4;",
+"  var occ=B.occ,inp=B.inp,out=B.out,sc=B.sc,sx=B.sx,sy=B.sy,visit=B.visit,cap=n+4;",
 "  occ.fill(0);",
 "  var m=Math.floor(b/2),h=0,len=3;",
 "  sx[0]=m+1;sy[0]=m;sx[1]=m;sy[1]=m;sx[2]=m-1;sy[2]=m;",
@@ -168,31 +211,60 @@ const WORKER_SRC=[
 "    for(var q=0;q<n;q++){if(!occ[q]){if(t--<=0){c=q;break}}}",
 "    if(c<0)return false;fx=c%b;fy=(c-fx)/b;return true}",
 "  spawn();",
-"  var dirIdx=1,steps=0,apples=0,hunger=0,hungerCost=0,limit=cfg.starve+cfg.board*4,alive=true;",
+"  var dirIdx=1,steps=0,apples=0,hunger=0,hungerCost=0,limit=cfg.starve+cfg.board*4,alive=true,crashed=false;",
+/* Potential-based reward shaping: the fitness gains (prevDist-newDist)
+   each step, telescoping over the run to (start-to-apple distance minus
+   end-to-apple distance). Moving back and forth nets to ~zero because
+   the gain from approaching is exactly cancelled by the loss from
+   retreating — so it cannot be farmed by pacing near the apple, only by
+   genuinely closing the distance over the course of the run. Reset
+   whenever a new apple spawns so it's always measured against the
+   *current* target. */
+"  var prevDist=Math.abs(fx-sx[h])+Math.abs(fy-sy[h]),shapeCost=0,revisitCost=0,visitPtr=0;",
+"  for(var vi=0;vi<VISITN;vi++)visit[vi]=-1;",
 "  var maxSteps=cfg.maxSteps;",
 "  while(alive&&steps<maxSteps){",
 "    var ti=(h+len-1)%cap,pi=(h+len-2)%cap;",
 "    var tdx=Math.sign(sx[pi]-sx[ti]),tdy=Math.sign(sy[pi]-sy[ti]),tailIdx=0;",
-"    for(var d=0;d<4;d++)if(D4[d][0]===tdx&&D4[d][1]===tdy)tailIdx=d;",
+"    for(var d2=0;d2<4;d2++)if(D4[d2][0]===tdx&&D4[d2][1]===tdy)tailIdx=d2;",
 "    sense(b,occ,sx[h],sy[h],fx,fy,dirIdx,tailIdx,inp);",
 "    forward(w,off,hid,inp,out,sc);",
 "    var bi=0;for(var o=1;o<4;o++)if(out[o]>out[bi])bi=o;",
 "    if((bi+2)%4===dirIdx){var bj=-1;for(var o2=0;o2<4;o2++){if((o2+2)%4===dirIdx)continue;if(bj<0||out[o2]>out[bj])bj=o2}bi=bj}",
 "    dirIdx=bi;",
 "    var nx=sx[h]+D4[bi][0],ny=sy[h]+D4[bi][1];",
-"    if(nx<0||ny<0||nx>=b||ny>=b){alive=false;break}",
+"    if(nx<0||ny<0||nx>=b||ny>=b){alive=false;crashed=true;break}",
 "    var eats=(nx===fx&&ny===fy);",
 "    var tailX=sx[ti],tailY=sy[ti];",
-"    if(occ[ny*b+nx]&&!(!eats&&nx===tailX&&ny===tailY)){alive=false;break}",
+"    if(occ[ny*b+nx]&&!(!eats&&nx===tailX&&ny===tailY)){alive=false;crashed=true;break}",
+/* Avoiding self-trapping and pointless wandering: penalize landing on a
+   cell the head sat on within the last VISITN moves (a vacated body cell
+   the snake is looping back onto), separate from the apple-distance
+   shaping above so short back-and-forth twitching near the apple is
+   punished even though the telescoping shaping term alone nets to zero
+   for it. */
+"    var vkey=ny*32+nx,revisited=false;",
+"    for(var rv=0;rv<VISITN;rv++){if(visit[rv]===vkey){revisited=true;break}}",
+"    if(revisited)revisitCost+=cfg.revisitPenalty;",
+"    visit[visitPtr]=vkey;visitPtr=(visitPtr+1)%VISITN;",
+"    var newDist=Math.abs(fx-nx)+Math.abs(fy-ny);",
+"    shapeCost+=(prevDist-newDist)*cfg.shapeWeight;",
+"    prevDist=newDist;",
 "    if(!eats){occ[tailY*b+tailX]=0}else{len++}",
 "    h=(h+cap-1)%cap;",
 "    sx[h]=nx;sy[h]=ny;occ[ny*b+nx]=1;",
 "    steps++;hunger++;",
 "    if(hunger>limit*0.5)hungerCost+=(hunger-limit*0.5)*cfg.hungerPenalty;",
-"    if(eats){apples++;hunger=0;if(!spawn())break}",
+"    if(eats){apples++;hunger=0;if(!spawn())break;prevDist=Math.abs(fx-sx[h])+Math.abs(fy-sy[h])}",
 "    if(hunger>limit)break;",
 "  }",
-"  var fit=apples*cfg.appleReward+steps*cfg.stepReward-hungerCost;",
+"  var fit=apples*cfg.appleReward+steps*cfg.stepReward-hungerCost+shapeCost-revisitCost;",
+/* A death by actually crashing into a wall or its own body is exactly the
+   failure mode reported (walking into/along walls, self-trapping) — give
+   it a distinct, explicit penalty on top of just losing future reward, so
+   a genome that crashes fast is clearly worse than one that survives to
+   the same step count by timing out on hunger or the move cap instead. */
+"  if(crashed)fit-=cfg.collisionPenalty;",
 "  if(apples>0)fit+=Math.min(steps,apples*cfg.board*4)*0.1;",
 "  return{fit:fit,apples:apples,steps:steps}",
 "}",
@@ -219,7 +291,8 @@ const WGSL=`
 struct P {
   board:u32, hidden:u32, geneLen:u32, games:u32,
   maxSteps:u32, starve:u32, total:u32, seed:u32,
-  appleReward:f32, stepReward:f32, hungerPenalty:f32, pad:f32,
+  appleReward:f32, stepReward:f32, hungerPenalty:f32, shapeWeight:f32,
+  revisitPenalty:f32, collisionPenalty:f32, pad0:f32, pad1:f32,
 };
 @group(0) @binding(0) var<uniform> p:P;
 @group(0) @binding(1) var<storage,read> W:array<f32>;
@@ -232,8 +305,9 @@ const HIDMAX:u32 = 64u;
 var<private> occ:array<u32,18>;
 var<private> body:array<u32,580>;   // packed x | y<<16
 var<private> sc:array<f32,64>;
-var<private> inp:array<f32,32>;
+var<private> inp:array<f32,28>;
 var<private> outv:array<f32,4>;
+var<private> visit:array<i32,8>;
 var<private> rs:u32;
 
 fn rnd()->f32{
@@ -294,6 +368,16 @@ fn main(@builtin(global_invocation_id) gid:vec3<u32>){
   var hunger:f32 = 0.0;
   var hungerCost:f32 = 0.0;
   let limit = f32(p.starve) + f32(b)*4.0;
+  // Same potential-based shaping and revisit tracking as the CPU path —
+  // see the comment above sense() in the CPU worker for why this is
+  // safe against pacing near the apple instead of eating it.
+  let ihx = i32(body[0] & 0xffffu); let ihy = i32(body[0] >> 16u);
+  var prevDist:f32 = f32(abs(fx-ihx) + abs(fy-ihy));
+  var shapeCost:f32 = 0.0;
+  var revisitCost:f32 = 0.0;
+  var crashed = false;
+  var visitPtr:u32 = 0u;
+  for(var vi=0u; vi<8u; vi=vi+1u){ visit[vi] = -1; }
 
   loop {
     if(!alive || steps >= p.maxSteps){ break; }
@@ -307,18 +391,32 @@ fn main(@builtin(global_invocation_id) gid:vec3<u32>){
 
     let hx = i32(body[h] & 0xffffu); let hy = i32(body[h] >> 16u);
 
-    // ---- sense (32 inputs) ----
+    // ---- sense (28 inputs): danger[4] + dir[4] + tail[4] + relApple[2] +
+    // headPos[2] + wallDist[4] + bodyRay[8] — must match the CPU worker's
+    // sense() and index.html's neuroSense() exactly, group for group.
     var ii:u32 = 0u;
+    for(var d=0u;d<4u;d=d+1u){
+      let ndx = hx + d4x(d); let ndy = hy + d4y(d);
+      var danger:f32 = 0.0;
+      if(ndx<0 || ndy<0 || ndx>=b || ndy>=b){ danger = 1.0; }
+      else if(occGet(u32(ndy*b+ndx))){ danger = 1.0; }
+      inp[ii]=danger; ii=ii+1u;
+    }
+    for(var k=0u;k<4u;k=k+1u){ if(k==dirIdx){ inp[ii]=1.0; } else { inp[ii]=0.0; } ii=ii+1u; }
+    for(var k=0u;k<4u;k=k+1u){ if(k==tailIdx){ inp[ii]=1.0; } else { inp[ii]=0.0; } ii=ii+1u; }
+    inp[ii]=f32(fx-hx)/f32(b); ii=ii+1u;
+    inp[ii]=f32(fy-hy)/f32(b); ii=ii+1u;
+    inp[ii]=f32(hx)/f32(b-1); ii=ii+1u;
+    inp[ii]=f32(hy)/f32(b-1); ii=ii+1u;
+    inp[ii]=f32(hy)/f32(b); ii=ii+1u;
+    inp[ii]=f32(b-1-hx)/f32(b); ii=ii+1u;
+    inp[ii]=f32(b-1-hy)/f32(b); ii=ii+1u;
+    inp[ii]=f32(hx)/f32(b); ii=ii+1u;
     for(var k=0u;k<8u;k=k+1u){
       let dx = d8x(k); let dy = d8y(k);
       var lim:i32 = 1000000;
       if(dx>0){ lim = b-hx; } else if(dx<0){ lim = hx+1; }
       if(dy>0){ if(b-hy<lim){ lim=b-hy; } } else if(dy<0){ if(hy+1<lim){ lim=hy+1; } }
-      var food:f32 = 0.0;
-      var tt:f32 = -1.0;
-      if(dx!=0){ tt = f32(fx-hx)/f32(dx); if(f32(hy)+f32(dy)*tt != f32(fy)){ tt = -1.0; } }
-      else { tt = f32(fy-hy)/f32(dy); if(fx != hx){ tt = -1.0; } }
-      if(tt>=1.0 && tt<f32(lim)){ food = 1.0/tt; }
       var bodyv:f32 = 0.0;
       var idx:i32 = hy*b+hx;
       let st:i32 = dy*b+dx;
@@ -326,18 +424,14 @@ fn main(@builtin(global_invocation_id) gid:vec3<u32>){
         idx = idx + st;
         if(occGet(u32(idx))){ bodyv = 1.0/f32(q); break; }
       }
-      inp[ii]=1.0/f32(lim); ii=ii+1u;
-      inp[ii]=food; ii=ii+1u;
       inp[ii]=bodyv; ii=ii+1u;
     }
-    for(var k=0u;k<4u;k=k+1u){ if(k==dirIdx){ inp[ii]=1.0; } else { inp[ii]=0.0; } ii=ii+1u; }
-    for(var k=0u;k<4u;k=k+1u){ if(k==tailIdx){ inp[ii]=1.0; } else { inp[ii]=0.0; } ii=ii+1u; }
 
     // ---- forward ----
     var wp:u32 = off;
     for(var j=0u;j<hid;j=j+1u){
       var s:f32 = 0.0;
-      for(var k=0u;k<32u;k=k+1u){ s = s + W[wp]*inp[k]; wp=wp+1u; }
+      for(var k=0u;k<28u;k=k+1u){ s = s + W[wp]*inp[k]; wp=wp+1u; }
       sc[j]=s;
     }
     for(var j=0u;j<hid;j=j+1u){ sc[j]=tanh(sc[j]+W[wp]); wp=wp+1u; }
@@ -362,9 +456,21 @@ fn main(@builtin(global_invocation_id) gid:vec3<u32>){
 
     let nx = hx + d4x(bi);
     let ny = hy + d4y(bi);
-    if(nx<0 || ny<0 || nx>=b || ny>=b){ alive=false; break; }
+    if(nx<0 || ny<0 || nx>=b || ny>=b){ alive=false; crashed=true; break; }
     let eats = (nx==fx && ny==fy);
-    if(occGet(u32(ny*b+nx)) && !(!eats && nx==tx && ny==ty)){ alive=false; break; }
+    if(occGet(u32(ny*b+nx)) && !(!eats && nx==tx && ny==ty)){ alive=false; crashed=true; break; }
+
+    let vkey = i32(ny*b + nx);
+    var revisited = false;
+    for(var rv=0u; rv<8u; rv=rv+1u){ if(visit[rv]==vkey){ revisited=true; } }
+    if(revisited){ revisitCost = revisitCost + p.revisitPenalty; }
+    visit[visitPtr] = vkey;
+    visitPtr = (visitPtr + 1u) % 8u;
+
+    let newDist = f32(abs(fx-nx) + abs(fy-ny));
+    shapeCost = shapeCost + (prevDist - newDist) * p.shapeWeight;
+    prevDist = newDist;
+
     if(!eats){ occClr(u32(ty*b+tx)); } else { len = len + 1u; }
     h = (h + cap - 1u) % cap;
     body[h] = u32(nx) | (u32(ny) << 16u);
@@ -382,11 +488,13 @@ fn main(@builtin(global_invocation_id) gid:vec3<u32>){
       for(var q=0u;q<n;q=q+1u){ if(!occGet(q)){ if(k<=0){ c=i32(q); break; } k=k-1; } }
       if(c<0){ break; }
       fx = c % b; fy = c / b;
+      prevDist = f32(abs(fx-nx) + abs(fy-ny));
     }
     if(hunger > limit){ break; }
   }
 
-  var fit = f32(apples)*p.appleReward + f32(steps)*p.stepReward - hungerCost;
+  var fit = f32(apples)*p.appleReward + f32(steps)*p.stepReward - hungerCost + shapeCost - revisitCost;
+  if(crashed){ fit = fit - p.collisionPenalty; }
   if(apples > 0u){ fit = fit + min(f32(steps), f32(apples)*f32(b)*4.0)*0.1; }
   R[t*3u+0u] = fit;
   R[t*3u+1u] = f32(apples);
@@ -417,7 +525,7 @@ async function gpuInit(){
   }
   gpu.device=device;
   gpu.pipeline=device.createComputePipeline({layout:"auto",compute:{module,entryPoint:"main"}});
-  gpu.uni=device.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+  gpu.uni=device.createBuffer({size:64,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
   gpu.ok=true;
   gpu.info=(adapter.info&&(adapter.info.vendor||adapter.info.architecture))?[adapter.info.vendor,adapter.info.architecture,adapter.info.device].filter(Boolean).join(" "):"WebGPU device";
   gpu.maxStorage=device.limits.maxStorageBufferBindingSize;
@@ -518,9 +626,9 @@ async function gpuPass(genomes,cfg,gl,seed){
   for(let i=0;i<count;i++)flat.set(genomes[i],i*gl);
   gpuEnsureBuffers(flat.byteLength,total*3*4);
   d.queue.writeBuffer(gpu.wBufObj,0,flat);
-  const u=new ArrayBuffer(48);
+  const u=new ArrayBuffer(64);
   new Uint32Array(u,0,8).set([cfg.board,cfg.hidden,gl,cfg.games,cfg.maxSteps,cfg.starve,total,seed>>>0]);
-  new Float32Array(u,32,4).set([cfg.appleReward,cfg.stepReward,cfg.hungerPenalty,0]);
+  new Float32Array(u,32,8).set([cfg.appleReward,cfg.stepReward,cfg.hungerPenalty,cfg.shapeWeight,cfg.revisitPenalty,cfg.collisionPenalty,0,0]);
   d.queue.writeBuffer(gpu.uni,0,u);
 
   const enc=d.createCommandEncoder();
@@ -563,7 +671,20 @@ function cfgRead(){
     workers:+$("workers").value,
     maxGen:+$("maxGen").value,
     maxSteps:+$("steps").value,
-    starve:60,appleReward:300,stepReward:0.2,hungerPenalty:0.05,
+    /* appleReward stays dominant on purpose — eating must always be worth
+       far more than any amount of shaping/survival reward, or the net can
+       learn to loiter instead of actually finishing the job. stepReward is
+       now just a small tie-breaker between non-eating runs (most of the
+       useful "move toward food" signal comes from shapeWeight instead,
+       since a flat per-step reward alone was rewarding aimless survival as
+       much as purposeful movement). shapeWeight is potential-based (see
+       the sense/play comments) so pacing back and forth nets ~zero — only
+       genuine progress toward the apple accumulates. revisitPenalty and
+       collisionPenalty directly target the reported failure modes: looping
+       back over recently-vacated cells, and walking straight into a wall
+       or its own body. */
+    starve:60,appleReward:300,stepReward:0.05,hungerPenalty:0.05,
+    shapeWeight:1,revisitPenalty:0.15,collisionPenalty:25,
   };
 }
 function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
@@ -800,6 +921,15 @@ async function train(){
     const top=ranked[0];
     const avgApples=ranked.reduce((s,r)=>s+r.apples,0)/ranked.length;
     const avgFit=ranked.reduce((s,r)=>s+r.fit,0)/ranked.length;
+    /* Cheap diversity signal: spread of fitness across the whole population.
+       A real per-genome weight-distance diversity metric would mean an
+       O(pop^2) comparison every generation — this reuses fitness values
+       already computed this generation instead. A population that's
+       converged on one mediocre solution shows this collapsing toward
+       zero (everyone scores about the same); healthy exploration keeps it
+       well above zero even while the champion is climbing. */
+    const fitVar=ranked.reduce((s,r)=>s+(r.fit-avgFit)*(r.fit-avgFit),0)/ranked.length;
+    const fitSpread=Math.sqrt(Math.max(0,fitVar));
     /* The champion sits at index 0 every generation and gets re-scored on a
        fresh set of random games each time, so a single sample of its fitness
        is noisy — champEma smooths those samples into a reliable read on how
@@ -876,7 +1006,7 @@ async function train(){
         elite:state.goodBase.elite*0.7+found.elite*0.3,
       }:found;
     }else state.staleGens=(state.staleGens||0)+1;
-    state.history.push({gen:state.gen,fit:state.champEma!==undefined?state.champEma:top.fit,apples:top.apples,avg:avgApples,avgFit:avgFit});
+    state.history.push({gen:state.gen,fit:state.champEma!==undefined?state.champEma:top.fit,apples:top.apples,avg:avgApples,avgFit:avgFit,fitSpread:fitSpread});
     if(state.history.length>360)state.history.shift();
     state.brain={hidden:cfg.hidden,weights:new Float32Array(state.bestG||top.g),gen:state.gen,apples:Math.round((state.bestApples!==undefined?state.bestApples:top.apples)*10)/10,fitness:Math.round(state.best.fit),board:cfg.board};
     try{localStorage.setItem("snake-neuro-brain",brainToJSON())}catch(e){}
@@ -1101,16 +1231,32 @@ function chart(){
     g.moveTo(6,py(0));g.lineTo(W-6,py(0));g.stroke();
   }
 
+  /* Population diversity (fitness spread) — plotted on its own scale
+     (its magnitude has nothing to do with the fitness axis) so it stays
+     readable as a shape rather than a flat line pinned to the bottom.
+     Drawn first so the two fitness lines sit on top of it. A spread that
+     collapses toward zero while the champion line is flat is the
+     "everyone converged on the same mediocre answer" signature the
+     trainer's own stall-detection logic is already reacting to — this
+     just makes that visible instead of only inferred from the log. */
+  const divVals=hist.map(p=>p.fitSpread||0);
+  let dmin=Math.min(...divVals),dmax=Math.max(...divVals);
+  if(dmin===dmax){dmin-=1;dmax+=1}
+  const dpad=(dmax-dmin)*0.08;dmin-=dpad;dmax+=dpad;
+  const pyDiv=v=>H-8-((v-dmin)/(dmax-dmin))*(H-24);
+  g.strokeStyle="#a78bfa77";g.lineWidth=1.5;g.beginPath();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),pyDiv(p.fitSpread||0)):g.moveTo(px(i),pyDiv(p.fitSpread||0)));g.stroke();
+
   // Average population fitness.
   g.strokeStyle="#f59e0b99";g.lineWidth=2;g.beginPath();
   hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.avgFit)):g.moveTo(px(i),py(p.avgFit)));g.stroke();
 
-  // Best fitness / champion progress.
+  // Best (all-time champion) fitness.
   g.strokeStyle="#2dd4bf";g.lineWidth=3;g.beginPath();
   hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.fit)):g.moveTo(px(i),py(p.fit)));g.stroke();
 
   g.fillStyle="#8fa1b4";g.font="18px ui-monospace,monospace";
-  g.fillText("AI performance · best "+Math.round(hist[hist.length-1].fit*10)/10+" score · gen "+state.gen,12,26);
+  g.fillText("best fitness "+Math.round(hist[hist.length-1].fit*10)/10+" (teal) · avg fitness (amber) · diversity (violet) · gen "+state.gen,12,26);
 }
 function brainToJSON(){
   if(!state.brain)return null;
@@ -1257,7 +1403,13 @@ $("file").onchange=async e=>{
   try{
     const d=JSON.parse(await f.text());
     if(!d.weights||!d.hidden)throw new Error("not a brain file");
-    if(d.weights.length!==geneLen(d.hidden))throw new Error("weight count does not match hidden size");
+    if(d.weights.length!==geneLen(d.hidden)){
+      const oldIn=32,oldGeneLen=h=>h*oldIn+h+OUT*h+OUT;
+      if(d.weights.length===oldGeneLen(d.hidden)&&(d.inputs===oldIn||d.inputs===undefined)){
+        throw new Error("this is a brain from the old 32-input observation format — it can't seed a run here (28 inputs now); starting a run will just train a fresh population instead");
+      }
+      throw new Error("weight count does not match hidden size");
+    }
     state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};
     $("hid").value=String(d.hidden);$("oHid").textContent=String(d.hidden);
     state.gen=state.brain.gen||0;state.history=[];state.best=null;render();
@@ -1291,7 +1443,25 @@ function renderCaps(){
   renderCaps();
   try{
     const saved=localStorage.getItem("snake-neuro-brain");
-    if(saved){const d=JSON.parse(saved);if(d&&d.weights&&d.hidden){state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};state.gen=state.brain.gen||0;log("found a saved brain (gen "+state.brain.gen+") — it will seed the first population")}}
+    if(saved){
+      const d=JSON.parse(saved);
+      if(d&&d.weights&&d.hidden){
+        if(d.weights.length===geneLen(d.hidden)){
+          state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};
+          state.gen=state.brain.gen||0;
+          log("found a saved brain (gen "+state.brain.gen+") — it will seed the first population");
+        }else{
+          /* A brain saved before the observation vector changed (old 32
+             inputs vs today's 28) has the wrong weight count for its
+             hidden size — seeding a run with it would push a mismatched-
+             length genome into evaluate() and crash on the very first
+             generation. Leave state.brain unset so training just starts
+             from a fresh random population instead, same as if nothing
+             had been saved. */
+          log("found a saved brain, but it's from the old 32-input observation format and can't seed a run here — starting fresh instead (train a new one and it'll autosave in the current format)");
+        }
+      }
+    }
   }catch(e){}
   render();
 })();

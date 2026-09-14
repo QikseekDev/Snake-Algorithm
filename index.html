@@ -1513,7 +1513,11 @@ if(!CanvasRenderingContext2D.prototype.roundRect){CanvasRenderingContext2D.proto
    every CPU core and never blocks the page. Brains can be kept in
    localStorage or written straight to disk.
    ============================================================ */
-const NEURO_IN=32, NEURO_OUT=4;
+/* 28 inputs: danger[4] + dir[4] + tail[4] + relApple[2] + headPos[2] +
+   wallDist[4] + bodyRay[8]. Must match sense()/the WGSL shader in
+   train.html exactly, group for group — see the big comment above IN
+   in train.html for why each group is here. */
+const NEURO_IN=28, NEURO_OUT=4;
 const NEURO_KEY="snake-neuro-brain";
 const DIR8=[[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];
 const geneLen=h=>h*NEURO_IN+h+NEURO_OUT*h+NEURO_OUT;
@@ -1534,20 +1538,34 @@ const neuro={
 };
 
 /* ---------- shared inference (must match the worker exactly) ---------- */
-function neuroSense(b,occ,head,foods,dirIdx,tailIdx,inp){
+const NEURO_D4=[[0,-1],[1,0],[0,1],[-1,0]];
+function neuroSense(b,occ,head,food,dirIdx,tailIdx,inp){
   let i=0;
-  for(let k=0;k<8;k++){
-    const dx=DIR8[k][0],dy=DIR8[k][1];
-    let x=head.x+dx,y=head.y+dy,dist=1,food=0,body=0;
-    while(x>=0&&y>=0&&x<b&&y<b){
-      if(!food){for(let f=0;f<foods.length;f++)if(foods[f].x===x&&foods[f].y===y){food=1/dist;break}}
-      if(!body&&occ[y*b+x])body=1/dist;
-      x+=dx;y+=dy;dist++;
-    }
-    inp[i++]=1/dist;inp[i++]=food;inp[i++]=body;
+  const hx=head.x,hy=head.y;
+  for(let d=0;d<4;d++){
+    const nx=hx+NEURO_D4[d][0],ny=hy+NEURO_D4[d][1];
+    inp[i++]=(nx<0||ny<0||nx>=b||ny>=b||occ[ny*b+nx])?1:0;
   }
   for(let k=0;k<4;k++)inp[i++]=k===dirIdx?1:0;
   for(let k=0;k<4;k++)inp[i++]=k===tailIdx?1:0;
+  const fx=food?food.x:hx,fy=food?food.y:hy;
+  inp[i++]=(fx-hx)/b;
+  inp[i++]=(fy-hy)/b;
+  inp[i++]=hx/(b-1);
+  inp[i++]=hy/(b-1);
+  inp[i++]=hy/b;
+  inp[i++]=(b-1-hx)/b;
+  inp[i++]=(b-1-hy)/b;
+  inp[i++]=hx/b;
+  for(let k=0;k<8;k++){
+    const dx=DIR8[k][0],dy=DIR8[k][1];
+    let lim=1e9;
+    if(dx>0){lim=b-hx}else if(dx<0){lim=hx+1}
+    if(dy>0){if(b-hy<lim)lim=b-hy}else if(dy<0){if(hy+1<lim)lim=hy+1}
+    let bodyv=0,idx=hy*b+hx;const st=dy*b+dx;
+    for(let q=1;q<lim;q++){idx+=st;if(occ[idx]){bodyv=1/q;break}}
+    inp[i++]=bodyv;
+  }
   return inp;
 }
 function neuroForward(w,hid,inp,out,scratch){
@@ -1578,7 +1596,7 @@ function neuroAdvice(st){
   const dirIdx=ORDER.indexOf(st.dir);
   let near=null,nd=Infinity;
   for(const f of st.foods){const d=man(st.snake[0],f);if(d<nd){nd=d;near=f}}
-  neuroSense(b,occ,st.snake[0],near?[near]:[],dirIdx,tailIdx,neuroBuf.inp);
+  neuroSense(b,occ,st.snake[0],near,dirIdx,tailIdx,neuroBuf.inp);
   const hid=neuro.brain.hidden;
   if(neuroBuf.hid.length<hid)neuroBuf.hid=new Float32Array(hid);
   neuroForward(neuro.brain.weights,hid,neuroBuf.inp,neuroBuf.out,neuroBuf.hid);
@@ -1618,7 +1636,7 @@ function neuroMove(st){
      only, so live sensing matches the worker's inputs exactly */
   let near=null,nd=Infinity;
   for(const f of st.foods){const d=man(st.snake[0],f);if(d<nd){nd=d;near=f}}
-  neuroSense(b,occ,st.snake[0],near?[near]:[],dirIdx,tailIdx,neuroBuf.inp);
+  neuroSense(b,occ,st.snake[0],near,dirIdx,tailIdx,neuroBuf.inp);
   const hid=neuro.brain.hidden;
   if(neuroBuf.hid.length<hid)neuroBuf.hid=new Float32Array(hid);
   neuroForward(neuro.brain.weights,hid,neuroBuf.inp,neuroBuf.out,neuroBuf.hid);
@@ -1663,7 +1681,19 @@ function neuroRender(){
 function brainFromJSON(text){
   const d=JSON.parse(text);
   if(!d||!d.weights||!d.hidden)throw new Error("not a brain file");
-  if(d.weights.length!==geneLen(d.hidden))throw new Error("weight count does not match hidden size");
+  if(d.weights.length!==geneLen(d.hidden)){
+    /* Distinguish "this file is just corrupt/unrelated" from "this is a
+       real brain, but trained before the observation vector changed" —
+       old brains here used 32 inputs (8 rays × 3 + 4 dir + 4 tail) instead
+       of today's 28. Weights from one layout are meaningless read against
+       the other (same slot means a different feature entirely), so there
+       is no way to auto-upgrade it — it has to be retrained. */
+    const oldIn=32,oldGeneLen=h=>h*oldIn+h+NEURO_OUT*h+NEURO_OUT;
+    if(d.weights.length===oldGeneLen(d.hidden)&&(d.inputs===oldIn||d.inputs===undefined)){
+      throw new Error("this brain was trained with the old 32-input observation format and isn't compatible with the current 28-input trainer — retrain (or load an older copy of this page) to use it");
+    }
+    throw new Error("weight count does not match hidden size");
+  }
   neuro.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};
   neuro.best={fit:d.fitness||0,apples:d.apples||0,gen:d.gen||0};
   neuroRender();
@@ -1672,14 +1702,14 @@ function neuroToast(msg){ui.nnStatus.textContent=msg;clearTimeout(neuroToast.t);
 function neuroLoadLocal(quiet){
   const raw=localStorage.getItem(NEURO_KEY);
   if(!raw){if(!quiet)neuroToast("nothing saved in this browser yet");return}
-  try{brainFromJSON(raw);if(!quiet)neuroToast("brain loaded from this browser")}catch(e){if(!quiet)neuroToast("saved brain is unreadable")}
+  try{brainFromJSON(raw);if(!quiet)neuroToast("brain loaded from this browser")}catch(e){if(!quiet)neuroToast(e.message||"saved brain is unreadable")}
 }
 function neuroOpenFile(){
   const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";
   inp.onchange=()=>{
     const f=inp.files&&inp.files[0];if(!f)return;
     const r=new FileReader();
-    r.onload=()=>{try{brainFromJSON(String(r.result));neuroToast("loaded "+f.name)}catch(e){neuroToast("could not read that file")}};
+    r.onload=()=>{try{brainFromJSON(String(r.result));neuroToast("loaded "+f.name)}catch(e){neuroToast(e.message||"could not read that file")}};
     r.readAsText(f);
   };
   inp.click();
