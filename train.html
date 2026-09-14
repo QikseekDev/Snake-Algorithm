@@ -124,7 +124,7 @@ canvas#chart{width:100%;height:210px;border:1px solid var(--line);border-radius:
         <input id="autoSteps" type="checkbox" style="width:16px;height:16px;margin:0">
         <b style="color:var(--text);text-transform:none;letter-spacing:normal;font-size:13px">Auto-adjust move limit</b>
       </label>
-      <p class="sub" style="font-size:12px" id="stepsHelp">Off by default, since it changes the scoring conditions mid-run. Turn it on to let the move limit self-tune every 10 episodes.</p>
+      <p class="sub" style="font-size:12px" id="stepsHelp">Off by default, since it changes the scoring conditions mid-run. Turn it on to let the move limit grow every 10 episodes when runs keep hitting the cap or the score stalls. It never shrinks.</p>
       <p class="sub" style="font-size:12px">Rewards are normalised to roughly [-1,+1] (apple +1, death -1, small step cost, potential-based food shaping) so Q-values cannot explode. n-step returns, discount, replay mixture quotas and the exploration controller are fixed in code — see <code>cfgRead()</code> and <code>EXPLORE</code> in the script.</p>
     </div>
   </div>
@@ -1004,20 +1004,30 @@ function maybeAutoSteps(cfg){
   if(state.episode<20||state.episode%10!==0)return;
   if(state._lastAutoStepsEp===state.episode)return;
   state._lastAutoStepsEp=state.episode;
-  const stepsMin=+$("steps").min,stepsMax=+$("steps").max,stepsStepV=+$("steps").step;
+  const stepsMax=+$("steps").max,stepsStepV=+$("steps").step;
   const recent=state.recentLen.slice(-50);
   if(!recent.length)return;
+  // The limit only ratchets upward from wherever the run started: shrinking it
+  // mid-run just makes the task easier and hides the real failure mode.
+  if(state._autoStepsFloor==null)state._autoStepsFloor=cfg.maxSteps;
   const avgLen=avg(recent);
-  const nearCapFrac=recent.filter(v=>v>=cfg.maxSteps*0.9).length/recent.length;
-  let newSteps=cfg.maxSteps;
-  if(nearCapFrac>0.3)newSteps=Math.min(stepsMax,Math.round(cfg.maxSteps*1.25/stepsStepV)*stepsStepV);
-  else if(avgLen<cfg.maxSteps*0.35)newSteps=Math.max(stepsMin,Math.round(cfg.maxSteps*0.85/stepsStepV)*stepsStepV);
-  if(newSteps!==cfg.maxSteps){
-    const raising=newSteps>cfg.maxSteps;
-    log("auto move-limit: "+(raising?"raising":"lowering")+" to "+newSteps);
-    cfg.maxSteps=newSteps;
-    setSlider("steps",newSteps);
-  }
+  const truncFrac=recent.filter(v=>v>=cfg.maxSteps*0.95).length/recent.length;
+  const score=avg(state.recentScores.slice(-50));
+  const prevBest=state._autoStepsBestScore==null?-Infinity:state._autoStepsBestScore;
+  const improving=score>prevBest+0.05;
+  if(improving)state._autoStepsBestScore=score;
+  state._autoStepsStall=improving?0:(state._autoStepsStall||0)+1;
+  let factor=1,why="";
+  if(truncFrac>0.15){factor=1.5;why="runs hitting the cap ("+Math.round(truncFrac*100)+"%)"}
+  else if(truncFrac>0.02){factor=1.25;why="some runs hitting the cap"}
+  else if(state._autoStepsStall>=3&&avgLen>cfg.maxSteps*0.4){factor=1.25;why="score stalled while episodes run long"}
+  if(factor===1)return;
+  const newSteps=Math.min(stepsMax,Math.max(cfg.maxSteps+stepsStepV,Math.round(cfg.maxSteps*factor/stepsStepV)*stepsStepV));
+  if(newSteps===cfg.maxSteps)return;
+  state._autoStepsStall=0;
+  log("auto move-limit: raising to "+newSteps+" — "+why);
+  cfg.maxSteps=newSteps;
+  setSlider("steps",newSteps);
 }
 
 function recordHistoryPoint(cfg){
@@ -1297,7 +1307,7 @@ async function train(){
   state.evalHistory=[];state.evalAvg=0;state.evalBest=0;state.evalLen=0;state.evalBusy=false;state.evalStepMark=0;
   state.totalSteps=0;state.epsSteps=(state.brain&&state.brain.epsSteps)||0;
   state.started=performance.now();state.lastRender=0;state.gps=0;state.lastEpTime=0;
-  state._lastAutoStepsEp=-1;state.learnChain=Promise.resolve();
+  state._lastAutoStepsEp=-1;state._autoStepsBestScore=null;state._autoStepsStall=0;state._autoStepsFloor=null;state.learnChain=Promise.resolve();
   state.learnUpdates=0;state.learnSamples=0;state._nextTargetUpdate=0;
   state.plateauTicks=0;state.exploreBoost=0;state.epsFloor=0.05;
   state.perf={learnSamples:0,cpuPer:0,gpuPer:0,renderMs:0,chunkMs:0,lastChunk:0,cpuBlockMs:0,gpuSkips:0,gpuRuns:0};
