@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Snake AI — Full Throttle Trainer</title>
+<title>Snake AI — DQN Trainer (v3 learning core)</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0f14;--panel:#121922;--panel2:#17212d;--line:#263241;--text:#eaf1f8;--muted:#8fa1b4;--accent:#2dd4bf;--accent2:#f59e0b;--bad:#fb7185}
 *{box-sizing:border-box}html,body{height:100%}
@@ -29,18 +29,20 @@ input[type=range]{width:100%}
 .stat{border:1px solid var(--line);background:#0d141c;border-radius:10px;padding:10px}
 .stat span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
 .stat strong{font-size:18px;font-variant-numeric:tabular-nums}
-canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:10px;background:#0d131b}
+.stat.wide{grid-column:1 / -1}
+.stat.wide strong{font-size:13px;font-weight:600}
+canvas#chart{width:100%;height:210px;border:1px solid var(--line);border-radius:10px;background:#0d131b}
 .log{height:160px;overflow:auto;font:11px/1.5 ui-monospace,SFMono-Regular,monospace;color:var(--muted);white-space:pre-wrap}
 .badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:5px 10px;color:var(--muted);font-size:12px}
 .badge b{color:var(--accent)}
-.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}.max-master{box-shadow:0 0 0 1px #2dd4bf22 inset}.merged-auto{display:none!important}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div>
-    <h1>Snake AI — Full Throttle Trainer</h1>
-    <p class="sub">Same neuroevolution as the page trainer, but with no game to render: every CPU core runs games in a worker and (when available) the GPU simulates thousands of games per dispatch. Export the brain and load it in the game.</p>
+    <h1>Snake AI — DQN Trainer</h1>
+    <p class="sub">Rebuilt learning core: space-aware observations (flood-fill free space per action), n-step Double-DQN targets with correct truncation handling, class-balanced prioritised replay with importance weights, evaluation-driven adaptive exploration, and greedy evaluation runs. The saved brain file format is byte-for-byte the same schema as before (12 inputs, 3 outputs, same weight ordering), so old brains still load and seed a run.</p>
   </div>
 
   <div id="caps" class="btnrow"></div>
@@ -49,12 +51,30 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
     <div class="card">
       <h2>Progress</h2>
       <div class="stats">
-        <div class="stat"><span>Generation</span><strong id="sGen">0</strong></div>
-        <div class="stat"><span>Best AI score</span><strong id="sBest">-</strong></div>
-        <div class="stat"><span>Average AI score</span><strong id="sAvg">-</strong></div>
-        <div class="stat"><span>Games / sec</span><strong id="sRate">idle</strong></div>
-        <div class="stat"><span>GPU share</span><strong id="sSplit">-</strong></div>
-        <div class="stat"><span>Gens / sec</span><strong id="sGps">-</strong></div>
+        <div class="stat"><span>Episode</span><strong id="sGen">0</strong></div>
+        <div class="stat"><span>Best score (apples)</span><strong id="sBest">-</strong></div>
+        <div class="stat"><span>Avg score (apples)</span><strong id="sAvg">-</strong></div>
+        <div class="stat"><span>Eval avg (greedy)</span><strong id="sEvalAvg">-</strong></div>
+        <div class="stat"><span>Eval best (greedy)</span><strong id="sEvalBest">-</strong></div>
+        <div class="stat"><span>Eval survival (steps)</span><strong id="sEvalLen">-</strong></div>
+        <div class="stat"><span>Steps / sec</span><strong id="sRate">idle</strong></div>
+        <div class="stat"><span>Epsilon</span><strong id="sEps">-</strong></div>
+        <div class="stat"><span>Episodes / sec</span><strong id="sGps">-</strong></div>
+        <div class="stat"><span>Avg episode reward</span><strong id="sRew">-</strong></div>
+        <div class="stat"><span>Loss</span><strong id="sLoss">-</strong></div>
+        <div class="stat"><span>Avg Q</span><strong id="sQ">-</strong></div>
+        <div class="stat"><span>Q max</span><strong id="sQMax">-</strong></div>
+        <div class="stat"><span>TD error</span><strong id="sTD">-</strong></div>
+        <div class="stat"><span>Replay buffer</span><strong id="sReplay">-</strong></div>
+        <div class="stat"><span>Load GPU / CPU</span><strong id="sSplit">-</strong></div>
+        <div class="stat"><span>Learn samples / sec</span><strong id="sLearn">-</strong></div>
+        <div class="stat"><span>Active actors</span><strong id="sActors">-</strong></div>
+        <div class="stat"><span>Chunk size (steps)</span><strong id="sChunk">-</strong></div>
+        <div class="stat"><span>Plateau</span><strong id="sPlateau">-</strong></div>
+        <div class="stat wide"><span>Action distribution (straight / right / left)</span><strong id="sActions">-</strong></div>
+        <div class="stat wide"><span>Replay composition (apple / death / danger / plain)</span><strong id="sComp">-</strong></div>
+        <div class="stat wide"><span>Death reasons (training)</span><strong id="sDeaths">-</strong></div>
+        <div class="stat wide"><span>Death reasons (evaluation)</span><strong id="sEvalDeaths">-</strong></div>
       </div>
       <div style="height:12px"></div>
       <canvas id="chart" width="900" height="340"></canvas>
@@ -65,6 +85,7 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
         <button id="copy">Copy brain JSON</button>
         <button id="load">Load brain</button>
         <button id="savelocal">Save to local</button>
+        <button id="deletebrain">Delete brain</button>
         <input id="file" type="file" accept=".json,application/json" hidden>
       </div>
       <div style="height:12px"></div>
@@ -73,34 +94,38 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
 
     <div class="card">
       <h2>Settings</h2>
-      <label style="display:flex;align-items:center;flex-direction:row;gap:8px;margin-bottom:6px;background:#0d141c;border:1px solid var(--line);border-radius:8px;padding:10px 12px">
-        <input id="turbo" type="checkbox" style="width:16px;height:16px;margin:0">
-        <b style="color:var(--accent2);text-transform:none;letter-spacing:normal;font-size:13px">⚡ Auto-Turbo — max hardware, zero lag</b>
+      <label class="max-master" style="display:flex;align-items:center;flex-direction:row;gap:10px;margin-bottom:8px;background:linear-gradient(180deg,#121e28,#0d141c);border:1px solid var(--accent);border-radius:10px;padding:12px">
+        <input id="aiMax" type="checkbox" checked style="width:18px;height:18px;margin:0">
+        <span>
+          <b style="color:var(--accent2);text-transform:none;letter-spacing:normal;font-size:14px;display:block">🧠 AI MAXXING — Smart + Turbo + Resource Max</b>
+          <span class="sub" style="font-size:11px">One switch. Class-balanced prioritized replay, n-step Double-DQN, evaluation-driven exploration, greedy evaluation, GPU gradients and CPU actor saturation.</span>
+        </span>
       </label>
-      <p class="sub" style="font-size:12px;margin:0 0 12px" id="turboHelp">Locks population, games/genome, worker count and GPU split, then hill-climbs population up or down every generation to find the most this CPU+GPU combo can push through — backing off only just enough to stay smooth, never coasting at low usage or collapsing to nothing. Also locks Elite %, Mutation % and Mutation size, and self-tunes those toward whatever keeps the snake actually improving: it pushes mutation up to explore when progress stalls, and eases back down while raising Elite % to lock in gains once it's climbing again — elitism always keeps the current best genome untouched, so it can't regress no matter how far mutation swings.</p>
-      <label>Population <b id="oPop">2048</b><input id="pop" type="range" min="128" max="16384" step="128" value="2048"></label>
+      <p class="sub" style="font-size:12px;margin:0 0 12px">MAX mode maximises <b>learning quality per second</b>: it keeps the target network stable, samples a balanced mixture of apple / death / danger / ordinary transitions, measures real progress with exploration switched off, and only widens exploration when greedy evaluation actually stalls.</p>
+      <input id="turbo" type="checkbox" checked hidden>
+      <input id="hog" type="checkbox" checked hidden>
+      <input id="gpuAuto" type="checkbox" checked hidden>
+      <label id="gpuLoadLabel" class="merged-auto">GPU load <b id="oGpuLoad">100</b>%<input id="gpuLoad" type="range" min="0" max="100" step="5" value="100"></label>
+      <label id="cpuLoadLabel" class="merged-auto">CPU load <b id="oCpuLoad">100</b>%<input id="cpuLoad" type="range" min="0" max="100" step="5" value="100"></label>
+      <p class="sub merged-auto" style="font-size:12px;margin:0 0 12px" id="gpuHelp">In MAX mode the GPU is the gradient engine when WebGPU is available, while CPU cores stay busy on parallel actors. If WebGPU is unavailable, the learner falls back to CPU.</p>
+      <label>Replay buffer <b id="oPop">60000</b><input id="pop" type="range" min="2000" max="100000" step="1000" value="60000"></label>
       <label>Hidden neurons <b id="oHid">32</b><input id="hid" type="range" min="8" max="64" step="4" value="32"></label>
       <div class="rows">
-        <label>Games / genome <b id="oGames">6</b><input id="games" type="range" min="1" max="16" step="1" value="6"></label>
+        <label>Batch size <b id="oGames">128</b><input id="games" type="range" min="8" max="256" step="8" value="128"></label>
         <label>Move limit <b id="oSteps">1200</b><input id="steps" type="range" min="200" max="4000" step="100" value="1200"></label>
-        <label>Board <b id="oBoard">20</b><input id="board" type="range" min="8" max="24" step="1" value="20"></label>
-        <label>Elite % <b id="oElite">8</b><input id="elite" type="range" min="1" max="30" step="1" value="8"></label>
-        <label>Mutation % <b id="oMutR">6</b><input id="mutR" type="range" min="1" max="50" step="1" value="6"></label>
-        <label>Mutation size <b id="oMutS">18</b><input id="mutS" type="range" min="1" max="100" step="1" value="18"></label>
-        <label>CPU workers <b id="oWorkers">8</b><input id="workers" type="range" min="0" max="32" step="1" value="8"></label>
-        <label>Stop at gen (0=∞) <b id="oMaxGen">0</b><input id="maxGen" type="range" min="0" max="5000" step="50" value="0"></label>
+        <label>Board <b id="oBoard">12</b><input id="board" type="range" min="8" max="24" step="1" value="12"></label>
+        <label>Target sync (updates) <b id="oElite">10</b><input id="elite" type="range" min="1" max="50" step="1" value="10"></label>
+        <label>Epsilon decay (episodes) <b id="oMutR">50000</b><input id="mutR" type="range" min="100" max="100000" step="1000" value="50000"></label>
+        <label>Learning rate ×1e-5 <b id="oMutS">10</b><input id="mutS" type="range" min="1" max="100" step="1" value="10"></label>
+        <label>Parallel environments <b id="oWorkers">8</b><input id="workers" type="range" min="1" max="32" step="1" value="8"></label>
+        <label>Stop at episode (0=∞) <b id="oMaxGen">0</b><input id="maxGen" type="range" min="0" max="200000" step="500" value="0"></label>
       </div>
       <label style="display:flex;align-items:center;flex-direction:row;gap:8px;margin-bottom:6px">
         <input id="autoSteps" type="checkbox" style="width:16px;height:16px;margin:0">
         <b style="color:var(--text);text-transform:none;letter-spacing:normal;font-size:13px">Auto-adjust move limit</b>
       </label>
-      <p class="sub" style="font-size:12px" id="stepsHelp">Off by default — including in Auto-Turbo — since it changes the scoring conditions mid-run. Turn it on to let the move limit self-tune every few generations: if snakes are routinely surviving all the way to the cap, it's raised so long-lived snakes aren't cut off before showing their real ceiling; if snakes are dying well short of it, it's lowered so generations spend less time simulating moves nobody reaches.</p>
-      <label>GPU usage <b id="oGpu">50%</b><input id="gpu" type="range" min="0" max="100" step="5" value="50"></label>
-      <label style="display:flex;align-items:center;flex-direction:row;gap:8px;margin-bottom:6px">
-        <input id="autoSplit" type="checkbox" style="width:16px;height:16px;margin:0">
-        <b style="color:var(--text);text-transform:none;letter-spacing:normal;font-size:13px">Auto-balance GPU / CPU split</b>
-      </label>
-      <p class="sub" style="font-size:12px" id="gpuHelp">Genomes are split between GPU and CPU workers. Drag the slider to set the split manually — 50% is an even split. Turn on auto-balance to have it continuously re-tune itself each generation toward whichever split yields the most generations per second (more gens/sec means faster progress toward a better score).</p>
+      <p class="sub" style="font-size:12px" id="stepsHelp">Off by default, since it changes the scoring conditions mid-run. Turn it on to let the move limit self-tune every 10 episodes.</p>
+      <p class="sub" style="font-size:12px">Rewards are normalised to roughly [-1,+1] (apple +1, death -1, small step cost, potential-based food shaping) so Q-values cannot explode. n-step returns, discount, replay mixture quotas and the exploration controller are fixed in code — see <code>cfgRead()</code> and <code>EXPLORE</code> in the script.</p>
     </div>
   </div>
 </div>
@@ -108,1084 +133,1204 @@ canvas#chart{width:100%;height:170px;border:1px solid var(--line);border-radius:
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
+
 /* =========================================================
-   Observation vector (28 inputs) — replaces the old 24-ray/4-dir/4-tail
-   32-input layout. Rays alone told the net "how far to the nearest wall/
-   food/body in 8 directions" but never told it WHERE it actually was on
-   the board or where the apple was relative to it in absolute terms —
-   so two very different board states (e.g. hugging the left wall vs. the
-   right wall) could look almost identical to the net if the local ray
-   pattern happened to match, which is a big part of why trained snakes
-   would confidently walk into a wall. The new layout keeps the useful
-   parts of the old rays (body-only, still 8 directions — this is what
-   lets it sense a forming trap) and adds the information that was
-   actually missing:
-     0-3   immediate collision danger one step away, in absolute
-           up/right/down/left order (matches D4/ORDER everywhere else)
-     4-7   current heading, one-hot
-     8-11  tail heading, one-hot (helps it reason about its own body)
-     12-13 apple position relative to the head (dx,dy), normalized by
-           board size — replaces the old per-ray "food if aligned" signal
-           with something that works no matter which direction the food
-           is in, not just the 8 ray directions
-     14-15 head position, normalized to the board — without this the net
-           has no way to know it's already backed into a corner
-     16-19 distance to each wall, cardinal directions, normalized
-     20-27 body-only ray distance, 8 directions (unchanged from before)
-   Same 28-input layout is implemented three times — CPU worker below,
-   the WGSL compute shader further down, and neuroSense() in index.html
-   for live inference — and must stay in exact lockstep, or a brain
-   trained on one backend gets fed different numbers on another. */
-const IN=28,OUT=4;
+   SAVE-FORMAT CONTRACT (unchanged, hard requirement)
+   -------------------------------------------------------
+   IN=12, OUT=3, single tanh hidden layer, weight vector layout:
+     W1 [hid x IN] row-major, b1 [hid], W2 [OUT x hid] row-major, b2 [OUT]
+   geneLen(h) = h*12 + h + 3*h + 3
+   JSON: {format,version,hidden,inputs,outputs,gen,apples,fitness,board,
+          epsSteps,saved,weights[]}
+   Nothing here adds/removes/renames a field or reorders a weight.
+
+   WHAT CHANGED: the *meaning* of the 12 inputs (same count), the reward
+   function, the target computation, the replay buffer, the exploration
+   controller and the evaluation loop.
+
+   New observation vector (12 inputs). Indices 0..2 stay "immediate death
+   danger for relative action a", because the greedy policy and the
+   Double-DQN next-action mask both rely on that:
+     0..2  death if we take action a (straight / right / left)
+     3..5  fraction of still-reachable free space after action a
+           (flood fill) -> corridor / self-trapping / dead-end sensing
+     6     apple offset projected on the heading  (forward/backward)
+     7     apple offset projected on the right vector (right/left)
+     8     normalised manhattan distance to the apple
+     9     snake length / board area (body management pressure)
+     10    normalised hunger (steps since the last apple)
+     11    1 if some safe action still leaves the tail reachable
+           (a very strong "am I about to seal myself in" signal)
+   NOTE: the playback page (index.html) has its own copy of the sense
+   function. It must be updated to this same layout, or a brain trained
+   here will be fed different numbers when it plays.
+   ========================================================= */
+const IN=12,OUT=3;
 const geneLen=h=>h*IN+h+OUT*h+OUT;
+const WCLAMP=6;
+const NSTEP=3;
 const log=(m)=>{const l=$("log");l.textContent+=m+"\n";l.scrollTop=l.scrollHeight};
 
 /* =========================================================
-   CPU worker — identical game + net logic to the in-page trainer
-   NOTE: this exact simulation (sense/forward/play) also exists as a
-   WGSL shader below (gpuInit/WGSL) and, in inference-only form, as
-   neuroSense/neuroForward in index.html. There's no shared source —
-   all three are hand-kept in sync. A change to inputs, rewards, or
-   movement rules here needs the same change in both other places or
-   a trained brain will behave differently depending on where it runs.
+   Actor worker. Two modes:
+     collect — epsilon-greedy play, emits n-step transitions
+     eval    — fully greedy play, emits per-episode results
    ========================================================= */
-const WORKER_SRC=[
-"'use strict';",
-"var IN=28,OUT=4;",
-"var VISITN=8;",
-"var D4=[[0,-1],[1,0],[0,1],[-1,0]];",
-"var D8=[[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];",
-"function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}",
-/* 28-input sense: danger[4] + dir[4] + tail[4] + relApple[2] + headPos[2] +
-   wallDist[4] + bodyRay[8]. See the big comment above IN in the main
-   document for why each group is there — this must match the WGSL
-   shader's sense block and index.html's neuroSense() exactly. */
-"function sense(b,occ,hx,hy,fx,fy,dirIdx,tailIdx,inp){",
-"  var i=0;",
-"  for(var d=0;d<4;d++){",
-"    var nx=hx+D4[d][0],ny=hy+D4[d][1];",
-"    inp[i++]=(nx<0||ny<0||nx>=b||ny>=b||occ[ny*b+nx])?1:0;",
-"  }",
-"  for(var k=0;k<4;k++)inp[i++]=k===dirIdx?1:0;",
-"  for(var k2=0;k2<4;k2++)inp[i++]=k2===tailIdx?1:0;",
-"  inp[i++]=(fx-hx)/b;",
-"  inp[i++]=(fy-hy)/b;",
-"  inp[i++]=hx/(b-1);",
-"  inp[i++]=hy/(b-1);",
-"  inp[i++]=hy/b;",
-"  inp[i++]=(b-1-hx)/b;",
-"  inp[i++]=(b-1-hy)/b;",
-"  inp[i++]=hx/b;",
-"  for(var k3=0;k3<8;k3++){",
-"    var dx=D8[k3][0],dy=D8[k3][1];",
-"    var lim=1e9;",
-"    if(dx>0){lim=b-hx}else if(dx<0){lim=hx+1}",
-"    if(dy>0){if(b-hy<lim)lim=b-hy}else if(dy<0){if(hy+1<lim)lim=hy+1}",
-"    var body=0,idx=hy*b+hx,st=dy*b+dx;",
-"    for(var q=1;q<lim;q++){idx+=st;if(occ[idx]){body=1/q;break}}",
-"    inp[i++]=body;",
-"  }",
-"}",
-"function forward(w,off,hid,inp,out,sc){",
-"  var p=off,j,k,s;",
-"  for(j=0;j<hid;j++){s=0;for(k=0;k<IN;k++)s+=w[p++]*inp[k];sc[j]=s}",
-"  for(j=0;j<hid;j++)sc[j]=Math.tanh(sc[j]+w[p++]);",
-"  for(var o=0;o<OUT;o++){s=0;for(j=0;j<hid;j++)s+=w[p++]*sc[j];out[o]=s}",
-"  for(var o2=0;o2<OUT;o2++)out[o2]+=w[p++];",
-"}",
-"var W={n:-1,hid:-1};",
-"function bufs(n,hid){",
-"  if(W.n!==n){W.n=n;W.occ=new Uint8Array(n);W.sx=new Int16Array(n+4);W.sy=new Int16Array(n+4)}",
-"  if(W.hid!==hid){W.hid=hid;W.sc=new Float32Array(hid)}",
-"  if(!W.inp){W.inp=new Float32Array(IN);W.out=new Float32Array(OUT);W.visit=new Int32Array(VISITN)}",
-"  return W}",
-"function play(w,off,cfg,seed){",
-"  var b=cfg.board,n=b*b,hid=cfg.hidden,rng=mulberry(seed),B=bufs(n,hid);",
-"  var occ=B.occ,inp=B.inp,out=B.out,sc=B.sc,sx=B.sx,sy=B.sy,visit=B.visit,cap=n+4;",
-"  occ.fill(0);",
-"  var m=Math.floor(b/2),h=0,len=3;",
-"  sx[0]=m+1;sy[0]=m;sx[1]=m;sy[1]=m;sx[2]=m-1;sy[2]=m;",
-"  for(var i=0;i<len;i++)occ[sy[i]*b+sx[i]]=1;",
-"  var fx=0,fy=0;",
-"  function spawn(){var free=n-len;if(free<=0){return false}var t=Math.floor(rng()*free),c=-1;",
-"    for(var q=0;q<n;q++){if(!occ[q]){if(t--<=0){c=q;break}}}",
-"    if(c<0)return false;fx=c%b;fy=(c-fx)/b;return true}",
-"  spawn();",
-"  var dirIdx=1,steps=0,apples=0,hunger=0,hungerCost=0,limit=cfg.starve+cfg.board*4,alive=true,crashed=false;",
-/* Potential-based reward shaping: the fitness gains (prevDist-newDist)
-   each step, telescoping over the run to (start-to-apple distance minus
-   end-to-apple distance). Moving back and forth nets to ~zero because
-   the gain from approaching is exactly cancelled by the loss from
-   retreating — so it cannot be farmed by pacing near the apple, only by
-   genuinely closing the distance over the course of the run. Reset
-   whenever a new apple spawns so it's always measured against the
-   *current* target. */
-"  var prevDist=Math.abs(fx-sx[h])+Math.abs(fy-sy[h]),shapeCost=0,revisitCost=0,visitPtr=0;",
-"  for(var vi=0;vi<VISITN;vi++)visit[vi]=-1;",
-"  var maxSteps=cfg.maxSteps;",
-"  while(alive&&steps<maxSteps){",
-"    var ti=(h+len-1)%cap,pi=(h+len-2)%cap;",
-"    var tdx=Math.sign(sx[pi]-sx[ti]),tdy=Math.sign(sy[pi]-sy[ti]),tailIdx=0;",
-"    for(var d2=0;d2<4;d2++)if(D4[d2][0]===tdx&&D4[d2][1]===tdy)tailIdx=d2;",
-"    sense(b,occ,sx[h],sy[h],fx,fy,dirIdx,tailIdx,inp);",
-"    forward(w,off,hid,inp,out,sc);",
-"    var bi=0;for(var o=1;o<4;o++)if(out[o]>out[bi])bi=o;",
-"    if((bi+2)%4===dirIdx){var bj=-1;for(var o2=0;o2<4;o2++){if((o2+2)%4===dirIdx)continue;if(bj<0||out[o2]>out[bj])bj=o2}bi=bj}",
-"    dirIdx=bi;",
-"    var nx=sx[h]+D4[bi][0],ny=sy[h]+D4[bi][1];",
-"    if(nx<0||ny<0||nx>=b||ny>=b){alive=false;crashed=true;break}",
-"    var eats=(nx===fx&&ny===fy);",
-"    var tailX=sx[ti],tailY=sy[ti];",
-"    if(occ[ny*b+nx]&&!(!eats&&nx===tailX&&ny===tailY)){alive=false;crashed=true;break}",
-/* Avoiding self-trapping and pointless wandering: penalize landing on a
-   cell the head sat on within the last VISITN moves (a vacated body cell
-   the snake is looping back onto), separate from the apple-distance
-   shaping above so short back-and-forth twitching near the apple is
-   punished even though the telescoping shaping term alone nets to zero
-   for it. */
-"    var vkey=ny*32+nx,revisited=false;",
-"    for(var rv=0;rv<VISITN;rv++){if(visit[rv]===vkey){revisited=true;break}}",
-"    if(revisited)revisitCost+=cfg.revisitPenalty;",
-"    visit[visitPtr]=vkey;visitPtr=(visitPtr+1)%VISITN;",
-"    var newDist=Math.abs(fx-nx)+Math.abs(fy-ny);",
-"    shapeCost+=(prevDist-newDist)*cfg.shapeWeight;",
-"    prevDist=newDist;",
-"    if(!eats){occ[tailY*b+tailX]=0}else{len++}",
-"    h=(h+cap-1)%cap;",
-"    sx[h]=nx;sy[h]=ny;occ[ny*b+nx]=1;",
-"    steps++;hunger++;",
-"    if(hunger>limit*0.5)hungerCost+=(hunger-limit*0.5)*cfg.hungerPenalty;",
-"    if(eats){apples++;hunger=0;if(!spawn())break;prevDist=Math.abs(fx-sx[h])+Math.abs(fy-sy[h])}",
-"    if(hunger>limit)break;",
-"  }",
-"  var fit=apples*cfg.appleReward+steps*cfg.stepReward-hungerCost+shapeCost-revisitCost;",
-/* A death by actually crashing into a wall or its own body is exactly the
-   failure mode reported (walking into/along walls, self-trapping) — give
-   it a distinct, explicit penalty on top of just losing future reward, so
-   a genome that crashes fast is clearly worse than one that survives to
-   the same step count by timing out on hunger or the move cap instead. */
-"  if(crashed)fit-=cfg.collisionPenalty;",
-"  if(apples>0)fit+=Math.min(steps,apples*cfg.board*4)*0.1;",
-"  return{fit:fit,apples:apples,steps:steps}",
-"}",
-"onmessage=function(e){",
-"  var d=e.data,w=d.weights,cfg=d.cfg,count=d.count,gl=d.geneLen;",
-"  var fit=new Float32Array(count),app=new Float32Array(count),stp=new Float32Array(count);",
-"  for(var i=0;i<count;i++){",
-"    var f=0,a=0,s=0;",
-"    for(var g=0;g<cfg.games;g++){var r=play(w,i*gl,cfg,(d.seed+g*7919+i*104729)|0);f+=r.fit;a+=r.apples;s+=r.steps}",
-"    fit[i]=f/cfg.games;app[i]=a/cfg.games;stp[i]=s/cfg.games;",
-"  }",
-"  postMessage({id:d.id,fit:fit,app:app,stp:stp},[fit.buffer,app.buffer,stp.buffer]);",
-"};"
-].join("\n");
+const WORKER_SRC=`'use strict';
+var IN=12,OUT=3;
+var D4=[[0,-1],[1,0],[0,1],[-1,0]];
+function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+var FF={mark:null,queue:null,stamp:0,tailSeen:0};
+function ffInit(n){if(!FF.mark||FF.mark.length<n){FF.mark=new Int32Array(n);FF.queue=new Int32Array(n);FF.stamp=0}}
+function tailCell(env){var ti=(env.h+env.len-1)%env.cap;return env.sy[ti]*env.b+env.sx[ti]}
+/* Flood fill the free area reachable from (nx,ny) after the move, with the
+   tail cell treated as free when the snake is not eating (it moves away).
+   Returns the reachable cell count; FF.tailSeen says whether the snake's
+   own tail is inside that region. */
+function reach(env,nx,ny,eats){
+  var b=env.b,n=env.n,occ=env.occ,tc=eats?-1:tailCell(env);
+  ffInit(n);FF.stamp++;var st=FF.stamp,mk=FF.mark,q=FF.queue;
+  var start=ny*b+nx;mk[start]=st;q[0]=start;
+  var head=0,tail=1,cnt=0;
+  while(head<tail){
+    var c=q[head++];cnt++;
+    var cx=c%b,cy=(c-cx)/b;
+    for(var d=0;d<4;d++){
+      var xx=cx+D4[d][0],yy=cy+D4[d][1];
+      if(xx<0||yy<0||xx>=b||yy>=b)continue;
+      var ci=yy*b+xx;
+      if(mk[ci]===st)continue;
+      if(occ[ci]&&ci!==tc)continue;
+      mk[ci]=st;q[tail++]=ci;
+    }
+  }
+  FF.tailSeen=(tc>=0&&mk[tc]===st)?1:0;
+  return cnt;
+}
+function spawnApple(env,rng){
+  var b=env.b,n=env.n,free=n-env.len;
+  if(free<=0)return false;
+  var t=Math.floor(rng()*free),c=-1;
+  for(var q=0;q<n;q++){if(!env.occ[q]){if(t--<=0){c=q;break}}}
+  if(c<0)return false;
+  env.fx=c%b;env.fy=(c-env.fx)/b;return true;
+}
+function newEnv(cfg,rng){
+  var b=cfg.board,n=b*b;
+  var env={b:b,n:n,cap:n+4,occ:new Uint8Array(n),sx:new Int16Array(n+4),sy:new Int16Array(n+4),
+    h:0,len:3,dirIdx:1,fx:0,fy:0,hunger:0,steps:0,apples:0,episodeReward:0,prevDist:0,
+    limit:Math.max(40,cfg.starve+b*b/2)};
+  var m=Math.floor(b/2);
+  env.sx[0]=m+1;env.sy[0]=m;env.sx[1]=m;env.sy[1]=m;env.sx[2]=m-1;env.sy[2]=m;
+  for(var i=0;i<3;i++)env.occ[env.sy[i]*b+env.sx[i]]=1;
+  spawnApple(env,rng);
+  env.prevDist=Math.abs(env.fx-env.sx[0])+Math.abs(env.fy-env.sy[0]);
+  return env;
+}
+function relDir(dirIdx,a){return a===0?dirIdx:(a===1?(dirIdx+1)%4:(dirIdx+3)%4)}
+/* 12-input observation — see the contract comment in the page script. */
+function sense(env,inp){
+  var b=env.b,hx=env.sx[env.h],hy=env.sy[env.h],dirIdx=env.dirIdx;
+  var freeCells=env.n-env.len;if(freeCells<1)freeCells=1;
+  var tc=tailCell(env),anyTail=0;
+  for(var a=0;a<3;a++){
+    var dd=relDir(dirIdx,a);
+    var nx=hx+D4[dd][0],ny=hy+D4[dd][1];
+    var dead=(nx<0||ny<0||nx>=b||ny>=b);
+    var eats=false,ci=-1;
+    if(!dead){
+      ci=ny*b+nx;eats=(nx===env.fx&&ny===env.fy);
+      if(env.occ[ci]&&!(!eats&&ci===tc))dead=true;
+    }
+    inp[a]=dead?1:0;
+    if(dead){inp[3+a]=0}
+    else{
+      var c=reach(env,nx,ny,eats);
+      var frac=c/freeCells;inp[3+a]=frac>1?1:frac;
+      if(FF.tailSeen)anyTail=1;
+    }
+  }
+  var dx=env.fx-hx,dy=env.fy-hy;
+  var f=D4[dirIdx],r=D4[(dirIdx+1)%4];
+  inp[6]=(dx*f[0]+dy*f[1])/b;
+  inp[7]=(dx*r[0]+dy*r[1])/b;
+  inp[8]=(Math.abs(dx)+Math.abs(dy))/(2*b);
+  inp[9]=env.len/env.n;
+  var hg=env.hunger/env.limit;inp[10]=hg>1?1:hg;
+  inp[11]=anyTail;
+}
+function forward(w,hid,inp,out,sc){
+  var p=0,j,k,s,o;
+  for(j=0;j<hid;j++){s=0;for(k=0;k<IN;k++)s+=w[p++]*inp[k];sc[j]=s}
+  for(j=0;j<hid;j++)sc[j]=Math.tanh(sc[j]+w[p++]);
+  for(o=0;o<OUT;o++){s=0;for(j=0;j<hid;j++)s+=w[p++]*sc[j];out[o]=s}
+  for(o=0;o<OUT;o++)out[o]+=w[p++];
+}
+/* Rewards are normalised: apple +1, death -1, tiny step cost, and
+   potential-based food shaping (telescopes to zero over aimless pacing,
+   so circling can never be farmed). Running out of moves or starving is
+   a TRUNCATION, not a terminal state: episode ends but the transition
+   still bootstraps, which is what stops the agent from learning that
+   simply existing at the time limit is worth -infinity. */
+function stepEnv(env,cfg,action,rng){
+  var b=env.b,cap=env.cap;
+  var ti=(env.h+env.len-1)%cap;
+  var tailX=env.sx[ti],tailY=env.sy[ti];
+  var nx=env.sx[env.h]+D4[action][0],ny=env.sy[env.h]+D4[action][1];
+  var reward=-cfg.stepCost;
+  if(nx<0||ny<0||nx>=b||ny>=b){env.dirIdx=action;reward-=cfg.deathPenalty;env.episodeReward+=reward;return{reward:reward,done:true,terminal:true,death:'wall',apple:false}}
+  var eats=(nx===env.fx&&ny===env.fy);
+  if(env.occ[ny*b+nx]&&!(!eats&&nx===tailX&&ny===tailY)){env.dirIdx=action;reward-=cfg.deathPenalty;env.episodeReward+=reward;return{reward:reward,done:true,terminal:true,death:'body',apple:false}}
+  var newDist=Math.abs(env.fx-nx)+Math.abs(env.fy-ny);
+  reward+=(env.prevDist-newDist)*cfg.shapeWeight;
+  env.prevDist=newDist;
+  if(!eats){env.occ[tailY*b+tailX]=0}else{env.len++}
+  env.h=(env.h+cap-1)%cap;env.sx[env.h]=nx;env.sy[env.h]=ny;env.occ[ny*b+nx]=1;
+  env.dirIdx=action;env.steps++;env.hunger++;
+  var done=false,death=null,terminal=false;
+  if(eats){
+    env.apples++;env.hunger=0;reward+=cfg.appleReward;
+    if(!spawnApple(env,rng)){done=true;terminal=true;death='win'}
+    else env.prevDist=Math.abs(env.fx-nx)+Math.abs(env.fy-ny);
+  }
+  if(!done&&env.hunger>env.limit){done=true;death='starve'}
+  if(!done&&env.steps>=cfg.maxSteps){done=true;death='cap'}
+  env.episodeReward+=reward;
+  return {reward:reward,done:done,terminal:terminal,death:death,apple:eats};
+}
+var W={hid:-1};
+function buf(hid){
+  if(W.hid!==hid){W.hid=hid;W.sc=new Float32Array(hid)}
+  if(!W.inp){W.inp=new Float32Array(IN);W.inp2=new Float32Array(IN);W.out=new Float32Array(OUT)}
+  return W;
+}
+/* Greedy action: pick the highest-Q action among the ones that do not kill
+   us this step; when everything kills us, take the highest Q overall.
+   Ties are broken by remaining free space, so the greedy policy is robust
+   instead of collapsing onto whichever action index happens to come first. */
+function greedy(inp,out){
+  var bi=-1;
+  for(var o=0;o<3;o++){
+    if(inp[o]>=0.5)continue;
+    if(bi<0){bi=o;continue}
+    var d=out[o]-out[bi];
+    if(d>1e-6||(Math.abs(d)<=1e-6&&inp[3+o]>inp[3+bi]))bi=o;
+  }
+  if(bi<0){bi=0;for(var o2=1;o2<3;o2++)if(out[o2]>out[bi])bi=o2}
+  return bi;
+}
+/* Exploration that is curious, not suicidal: most of the time it samples
+   among the non-fatal actions, favouring the ones that keep more space
+   open, so exploratory episodes still produce usable experience. Pure
+   uniform noise is kept at a small rate so nothing is unreachable. */
+function explore(inp,rng){
+  if(rng()<0.15)return Math.floor(rng()*3);
+  var wts=[0,0,0],tot=0;
+  for(var a=0;a<3;a++){
+    var w=inp[a]>=0.5?0.02:(0.15+inp[3+a]);
+    wts[a]=w;tot+=w;
+  }
+  var t=rng()*tot;
+  for(var a2=0;a2<3;a2++){t-=wts[a2];if(t<=0)return a2}
+  return 2;
+}
+
+var localEnv=null,localRng=null,localCfgKey=null;
+var qS=[],qA=[],qR=[],qApple=[],qDanger=[];
+
+function flushWindow(cfg,ns,terminal,out,full){
+  /* Emit n-step transitions from the sliding window. "full" means only the
+     oldest entry (a complete N-step return) is emitted; otherwise the
+     episode ended and every remaining entry is emitted with its own,
+     shorter horizon. The per-transition discount is stored so the target
+     uses gamma^k with the correct k. */
+  var g=cfg.gamma;
+  var count=full?1:qS.length;
+  for(var e=0;e<count;e++){
+    var k=qS.length,R=0,disc=1,apple=false;
+    for(var i=0;i<k;i++){R+=disc*qR[i];disc*=g;if(qApple[i])apple=true}
+    out.push({s:qS[0],a:qA[0],r:R,ns:ns,d:terminal?1:0,g:disc,
+      cls:terminal?2:(apple?1:(qDanger[0]?3:0))});
+    qS.shift();qA.shift();qR.shift();qApple.shift();qDanger.shift();
+    if(full)break;
+  }
+}
+
+onmessage=function(e){
+  var d=e.data;
+  if(d.mode==='eval'){runEval(d);return}
+  var cfg=d.cfg,w=d.weights,hid=d.hidden,eps=d.epsilon,n=d.steps,seed=d.seed;
+  var key=cfg.board+':'+cfg.maxSteps;
+  if(!localEnv||localCfgKey!==key){localRng=mulberry(seed);localEnv=newEnv(cfg,localRng);localCfgKey=key;qS=[];qA=[];qR=[];qApple=[];qDanger=[]}
+  var B=buf(hid);
+  var out=[],episodes=[],acts=[0,0,0],steps=0;
+  while(out.length<n&&steps<n*3+16){
+    steps++;
+    sense(localEnv,B.inp);
+    var action;
+    if(localRng()<eps)action=explore(B.inp,localRng);
+    else{forward(w,hid,B.inp,B.out,B.sc);action=greedy(B.inp,B.out)}
+    acts[action]++;
+    var sCopy=new Float32Array(B.inp);
+    var danger=(B.inp[0]>0.5||B.inp[1]>0.5||B.inp[2]>0.5)?1:0;
+    var absAction=relDir(localEnv.dirIdx,action);
+    var res=stepEnv(localEnv,cfg,absAction,localRng);
+    qS.push(sCopy);qA.push(action);qR.push(res.reward);qApple.push(res.apple);qDanger.push(danger);
+    sense(localEnv,B.inp2);
+    var nsCopy=new Float32Array(B.inp2);
+    if(res.done){
+      flushWindow(cfg,nsCopy,res.terminal,out,false);
+      episodes.push({apples:localEnv.apples,steps:localEnv.steps,reward:localEnv.episodeReward,death:res.death||'unknown'});
+      localEnv=newEnv(cfg,localRng);
+      qS=[];qA=[];qR=[];qApple=[];qDanger=[];
+    }else if(qS.length>=cfg.nstep){
+      flushWindow(cfg,nsCopy,false,out,true);
+    }
+  }
+  var m=out.length;
+  var sArr=new Float32Array(m*IN),nsArr=new Float32Array(m*IN),aArr=new Uint8Array(m),
+      rArr=new Float32Array(m),dArr=new Uint8Array(m),gArr=new Float32Array(m),cArr=new Uint8Array(m);
+  for(var i=0;i<m;i++){
+    var t=out[i];
+    sArr.set(t.s,i*IN);nsArr.set(t.ns,i*IN);
+    aArr[i]=t.a;rArr[i]=t.r;dArr[i]=t.d;gArr[i]=t.g;cArr[i]=t.cls;
+  }
+  postMessage({sArr:sArr,nsArr:nsArr,aArr:aArr,rArr:rArr,dArr:dArr,gArr:gArr,cArr:cArr,
+    episodes:episodes,count:m,envSteps:steps,acts:acts},
+    [sArr.buffer,nsArr.buffer,aArr.buffer,rArr.buffer,dArr.buffer,gArr.buffer,cArr.buffer]);
+};
+
+/* Greedy evaluation: exploration fully disabled, fresh environments, its
+   own RNG stream so results are comparable run to run. */
+function runEval(d){
+  var cfg=d.cfg,w=d.weights,hid=d.hidden,k=d.episodes,rng=mulberry(d.seed);
+  var B=buf(hid),res=[];
+  for(var e=0;e<k;e++){
+    var env=newEnv(cfg,rng),guard=0,death='cap';
+    while(guard++<cfg.maxSteps+8){
+      sense(env,B.inp);
+      forward(w,hid,B.inp,B.out,B.sc);
+      var a=greedy(B.inp,B.out);
+      var r=stepEnv(env,cfg,relDir(env.dirIdx,a),rng);
+      if(r.done){death=r.death||'unknown';break}
+    }
+    res.push({apples:env.apples,steps:env.steps,death:death});
+  }
+  postMessage({mode:'eval',results:res});
+}
+`;
 
 let workerURL=null;
 function workerUrl(){if(!workerURL)workerURL=URL.createObjectURL(new Blob([WORKER_SRC],{type:"text/javascript"}));return workerURL}
 
-/* =========================================================
-   GPU backend — the same game simulated in a WGSL compute shader,
-   one invocation per (genome, game).
-   ========================================================= */
-const WGSL=`
-struct P {
-  board:u32, hidden:u32, geneLen:u32, games:u32,
-  maxSteps:u32, starve:u32, total:u32, seed:u32,
-  appleReward:f32, stepReward:f32, hungerPenalty:f32, shapeWeight:f32,
-  revisitPenalty:f32, collisionPenalty:f32, pad0:f32, pad1:f32,
-};
-@group(0) @binding(0) var<uniform> p:P;
-@group(0) @binding(1) var<storage,read> W:array<f32>;
-@group(0) @binding(2) var<storage,read_write> R:array<f32>;
-
-const CAPMAX:u32 = 580u;   // board <= 24 -> 576 cells + 4
-const OCCW:u32 = 18u;      // 576 bits / 32
-const HIDMAX:u32 = 64u;
-
-var<private> occ:array<u32,18>;
-var<private> body:array<u32,580>;   // packed x | y<<16
-var<private> sc:array<f32,64>;
-var<private> inp:array<f32,28>;
-var<private> outv:array<f32,4>;
-var<private> visit:array<i32,8>;
-var<private> rs:u32;
-
-fn rnd()->f32{
-  rs = rs + 0x6D2B79F5u;
-  var t:u32 = rs;
-  t = (t ^ (t >> 15u)) * (t | 1u);
-  t = t ^ (t + (t ^ (t >> 7u)) * (t | 61u));
-  return f32(t ^ (t >> 14u)) / 4294967296.0;
-}
-fn occGet(i:u32)->bool { return ((occ[i >> 5u] >> (i & 31u)) & 1u) == 1u; }
-fn occSet(i:u32){ occ[i >> 5u] = occ[i >> 5u] | (1u << (i & 31u)); }
-fn occClr(i:u32){ occ[i >> 5u] = occ[i >> 5u] & ~(1u << (i & 31u)); }
-fn d4x(d:u32)->i32 { if(d==0u){return 0;} if(d==1u){return 1;} if(d==2u){return 0;} return -1; }
-fn d4y(d:u32)->i32 { if(d==0u){return -1;} if(d==1u){return 0;} if(d==2u){return 1;} return 0; }
-fn d8x(k:u32)->i32 { var a=array<i32,8>(0,1,1,1,0,-1,-1,-1); return a[k]; }
-fn d8y(k:u32)->i32 { var a=array<i32,8>(-1,-1,0,1,1,1,0,-1); return a[k]; }
-
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid:vec3<u32>){
-  let t = gid.x;
-  if(t >= p.total){ return; }
-  let genome = t / p.games;
-  let game = t % p.games;
-  let off = genome * p.geneLen;
-  let b = i32(p.board);
-  let n = u32(b*b);
-  let cap = n + 4u;
-  let hid = p.hidden;
-
-  rs = p.seed + game*7919u + genome*104729u + 1u;
-  for(var i=0u;i<OCCW;i=i+1u){ occ[i]=0u; }
-
-  let m = b/2;
-  var h:u32 = 0u;
-  var len:u32 = 3u;
-  body[0] = u32(m+1) | (u32(m) << 16u);
-  body[1] = u32(m)   | (u32(m) << 16u);
-  body[2] = u32(m-1) | (u32(m) << 16u);
-  for(var i=0u;i<3u;i=i+1u){
-    let x = i32(body[i] & 0xffffu); let y = i32(body[i] >> 16u);
-    occSet(u32(y*b+x));
-  }
-
-  var fx:i32 = 0; var fy:i32 = 0;
-  var alive = true;
-  // spawn first apple
-  {
-    let free = n - len;
-    var k = i32(rnd()*f32(free));
-    var c:i32 = -1;
-    for(var q=0u;q<n;q=q+1u){ if(!occGet(q)){ if(k<=0){ c=i32(q); break; } k=k-1; } }
-    if(c<0){ alive=false; } else { fx = c % b; fy = c / b; }
-  }
-
-  var dirIdx:u32 = 1u;
-  var steps:u32 = 0u;
-  var apples:u32 = 0u;
-  var hunger:f32 = 0.0;
-  var hungerCost:f32 = 0.0;
-  let limit = f32(p.starve) + f32(b)*4.0;
-  // Same potential-based shaping and revisit tracking as the CPU path —
-  // see the comment above sense() in the CPU worker for why this is
-  // safe against pacing near the apple instead of eating it.
-  let ihx = i32(body[0] & 0xffffu); let ihy = i32(body[0] >> 16u);
-  var prevDist:f32 = f32(abs(fx-ihx) + abs(fy-ihy));
-  var shapeCost:f32 = 0.0;
-  var revisitCost:f32 = 0.0;
-  var crashed = false;
-  var visitPtr:u32 = 0u;
-  for(var vi=0u; vi<8u; vi=vi+1u){ visit[vi] = -1; }
-
-  loop {
-    if(!alive || steps >= p.maxSteps){ break; }
-    let ti = (h + len - 1u) % cap;
-    let pi = (h + len - 2u) % cap;
-    let tx = i32(body[ti] & 0xffffu); let ty = i32(body[ti] >> 16u);
-    let px = i32(body[pi] & 0xffffu); let py = i32(body[pi] >> 16u);
-    let tdx = sign(px - tx); let tdy = sign(py - ty);
-    var tailIdx:u32 = 0u;
-    for(var d=0u;d<4u;d=d+1u){ if(d4x(d)==tdx && d4y(d)==tdy){ tailIdx=d; } }
-
-    let hx = i32(body[h] & 0xffffu); let hy = i32(body[h] >> 16u);
-
-    // ---- sense (28 inputs): danger[4] + dir[4] + tail[4] + relApple[2] +
-    // headPos[2] + wallDist[4] + bodyRay[8] — must match the CPU worker's
-    // sense() and index.html's neuroSense() exactly, group for group.
-    var ii:u32 = 0u;
-    for(var d=0u;d<4u;d=d+1u){
-      let ndx = hx + d4x(d); let ndy = hy + d4y(d);
-      var danger:f32 = 0.0;
-      if(ndx<0 || ndy<0 || ndx>=b || ndy>=b){ danger = 1.0; }
-      else if(occGet(u32(ndy*b+ndx))){ danger = 1.0; }
-      inp[ii]=danger; ii=ii+1u;
-    }
-    for(var k=0u;k<4u;k=k+1u){ if(k==dirIdx){ inp[ii]=1.0; } else { inp[ii]=0.0; } ii=ii+1u; }
-    for(var k=0u;k<4u;k=k+1u){ if(k==tailIdx){ inp[ii]=1.0; } else { inp[ii]=0.0; } ii=ii+1u; }
-    inp[ii]=f32(fx-hx)/f32(b); ii=ii+1u;
-    inp[ii]=f32(fy-hy)/f32(b); ii=ii+1u;
-    inp[ii]=f32(hx)/f32(b-1); ii=ii+1u;
-    inp[ii]=f32(hy)/f32(b-1); ii=ii+1u;
-    inp[ii]=f32(hy)/f32(b); ii=ii+1u;
-    inp[ii]=f32(b-1-hx)/f32(b); ii=ii+1u;
-    inp[ii]=f32(b-1-hy)/f32(b); ii=ii+1u;
-    inp[ii]=f32(hx)/f32(b); ii=ii+1u;
-    for(var k=0u;k<8u;k=k+1u){
-      let dx = d8x(k); let dy = d8y(k);
-      var lim:i32 = 1000000;
-      if(dx>0){ lim = b-hx; } else if(dx<0){ lim = hx+1; }
-      if(dy>0){ if(b-hy<lim){ lim=b-hy; } } else if(dy<0){ if(hy+1<lim){ lim=hy+1; } }
-      var bodyv:f32 = 0.0;
-      var idx:i32 = hy*b+hx;
-      let st:i32 = dy*b+dx;
-      for(var q:i32=1;q<lim;q=q+1){
-        idx = idx + st;
-        if(occGet(u32(idx))){ bodyv = 1.0/f32(q); break; }
-      }
-      inp[ii]=bodyv; ii=ii+1u;
-    }
-
-    // ---- forward ----
-    var wp:u32 = off;
-    for(var j=0u;j<hid;j=j+1u){
-      var s:f32 = 0.0;
-      for(var k=0u;k<28u;k=k+1u){ s = s + W[wp]*inp[k]; wp=wp+1u; }
-      sc[j]=s;
-    }
-    for(var j=0u;j<hid;j=j+1u){ sc[j]=tanh(sc[j]+W[wp]); wp=wp+1u; }
-    for(var o=0u;o<4u;o=o+1u){
-      var s:f32 = 0.0;
-      for(var j=0u;j<hid;j=j+1u){ s = s + W[wp]*sc[j]; wp=wp+1u; }
-      outv[o]=s;
-    }
-    for(var o=0u;o<4u;o=o+1u){ outv[o]=outv[o]+W[wp]; wp=wp+1u; }
-
-    var bi:u32 = 0u;
-    for(var o=1u;o<4u;o=o+1u){ if(outv[o]>outv[bi]){ bi=o; } }
-    if((bi+2u)%4u == dirIdx){
-      var bj:i32 = -1;
-      for(var o=0u;o<4u;o=o+1u){
-        if((o+2u)%4u == dirIdx){ continue; }
-        if(bj<0 || outv[o]>outv[u32(bj)]){ bj=i32(o); }
-      }
-      bi = u32(bj);
-    }
-    dirIdx = bi;
-
-    let nx = hx + d4x(bi);
-    let ny = hy + d4y(bi);
-    if(nx<0 || ny<0 || nx>=b || ny>=b){ alive=false; crashed=true; break; }
-    let eats = (nx==fx && ny==fy);
-    if(occGet(u32(ny*b+nx)) && !(!eats && nx==tx && ny==ty)){ alive=false; crashed=true; break; }
-
-    let vkey = i32(ny*b + nx);
-    var revisited = false;
-    for(var rv=0u; rv<8u; rv=rv+1u){ if(visit[rv]==vkey){ revisited=true; } }
-    if(revisited){ revisitCost = revisitCost + p.revisitPenalty; }
-    visit[visitPtr] = vkey;
-    visitPtr = (visitPtr + 1u) % 8u;
-
-    let newDist = f32(abs(fx-nx) + abs(fy-ny));
-    shapeCost = shapeCost + (prevDist - newDist) * p.shapeWeight;
-    prevDist = newDist;
-
-    if(!eats){ occClr(u32(ty*b+tx)); } else { len = len + 1u; }
-    h = (h + cap - 1u) % cap;
-    body[h] = u32(nx) | (u32(ny) << 16u);
-    occSet(u32(ny*b+nx));
-    steps = steps + 1u;
-    hunger = hunger + 1.0;
-    if(hunger > limit*0.5){ hungerCost = hungerCost + (hunger - limit*0.5)*p.hungerPenalty; }
-    if(eats){
-      apples = apples + 1u;
-      hunger = 0.0;
-      let free = n - len;
-      if(free == 0u){ break; }
-      var k = i32(rnd()*f32(free));
-      var c:i32 = -1;
-      for(var q=0u;q<n;q=q+1u){ if(!occGet(q)){ if(k<=0){ c=i32(q); break; } k=k-1; } }
-      if(c<0){ break; }
-      fx = c % b; fy = c / b;
-      prevDist = f32(abs(fx-nx) + abs(fy-ny));
-    }
-    if(hunger > limit){ break; }
-  }
-
-  var fit = f32(apples)*p.appleReward + f32(steps)*p.stepReward - hungerCost + shapeCost - revisitCost;
-  if(crashed){ fit = fit - p.collisionPenalty; }
-  if(apples > 0u){ fit = fit + min(f32(steps), f32(apples)*f32(b)*4.0)*0.1; }
-  R[t*3u+0u] = fit;
-  R[t*3u+1u] = f32(apples);
-  R[t*3u+2u] = f32(steps);
-}
-`;
-
-const gpu={ok:false,device:null,pipeline:null,layout:null,uni:null,wBuf:0,rBuf:0,readBuf:0,wSize:0,rSize:0,key:"",retries:0};
-
-async function gpuInit(){
-  if(!navigator.gpu) return "no WebGPU in this browser";
-  let adapter=null;
-  try{ adapter=await navigator.gpu.requestAdapter({powerPreference:"high-performance"}); }catch(e){ return "adapter error: "+e.message }
-  if(!adapter) return "no GPU adapter available";
-  let device=null;
-  try{
-    device=await adapter.requestDevice({requiredLimits:{
-      maxStorageBufferBindingSize:Math.min(adapter.limits.maxStorageBufferBindingSize,1024*1024*1024),
-      maxBufferSize:Math.min(adapter.limits.maxBufferSize,1024*1024*1024),
-    }});
-  }catch(e){ try{ device=await adapter.requestDevice(); }catch(e2){ return "device request failed" } }
-  if(!device) return "device request failed";
-  device.lost.then(info=>{ if(info.reason!=="destroyed")handleGpuLoss(info.reason); });
-  const module=device.createShaderModule({code:WGSL});
-  const info=await module.getCompilationInfo?.();
-  if(info&&info.messages.some(m=>m.type==="error")){
-    return "shader error: "+info.messages.filter(m=>m.type==="error").map(m=>m.message).join("; ");
-  }
-  gpu.device=device;
-  gpu.pipeline=device.createComputePipeline({layout:"auto",compute:{module,entryPoint:"main"}});
-  gpu.uni=device.createBuffer({size:64,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
-  gpu.ok=true;
-  gpu.info=(adapter.info&&(adapter.info.vendor||adapter.info.architecture))?[adapter.info.vendor,adapter.info.architecture,adapter.info.device].filter(Boolean).join(" "):"WebGPU device";
-  gpu.maxStorage=device.limits.maxStorageBufferBindingSize;
-  return null;
-}
-
-/* =========================================================
-   GPU loss recovery — a lost device (driver reset, tab backgrounded
-   too long, browser OOM-killing the GPU process, etc.) used to require
-   a full page reload to get GPU compute back, since gpu.ok just stuck
-   at false forever. Now: any loss (from the device.lost promise, or a
-   pass that throws mid-run) tears down the old device's now-invalid
-   buffers, makes sure CPU workers exist to cover the load in the
-   meantime, and retries gpuInit() on a backoff — all without touching
-   whatever generation is currently training. */
-let gpuRetryTimer=null;
-function handleGpuLoss(reason){
-  if(!gpu.ok&&gpuRetryTimer)return; // already mid-recovery, nothing new to do
-  gpu.ok=false;
-  log("GPU lost ("+reason+") — continuing on CPU only, will try to recover…");
-  renderCaps();
-  if(state.training&&!state.pool.length){
-    const n=Math.max(1,state._lastWorkers||navigator.hardwareConcurrency||4);
-    spawnPool(n);
-    log("spun up "+n+" CPU worker(s) to cover the work the GPU was doing");
-  }
-  scheduleGpuRecovery();
-}
-async function gpuReinit(){
-  /* the old device's buffers/pipeline/bind-group are tied to the dead
-     device and unusable with a new one — drop them so gpuEnsureBuffers
-     recreates everything fresh instead of reusing stale handles */
-  try{gpu.wBufObj&&gpu.wBufObj.destroy()}catch(e){}
-  try{gpu.rBufObj&&gpu.rBufObj.destroy()}catch(e){}
-  try{gpu.readObj&&gpu.readObj.destroy()}catch(e){}
-  gpu.wBufObj=null;gpu.rBufObj=null;gpu.readObj=null;gpu.wSize=0;gpu.rSize=0;gpu.bind=null;gpu.pipeline=null;gpu.uni=null;gpu.device=null;gpu.ok=false;
-  const err=await gpuInit();
-  renderCaps();
-  if(gpu.ok){gpu.retries=0;log("GPU recovered — back to GPU+CPU split")}
-  else log("GPU still unavailable ("+err+")");
-  return gpu.ok;
-}
-function scheduleGpuRecovery(){
-  if(gpuRetryTimer||gpu.ok)return;
-  if(gpu.retries>=5){log("giving up on GPU auto-recovery after several failed attempts — it'll stay CPU-only until you reload the page");return}
-  gpu.retries++;
-  const delay=Math.min(15000,2000*gpu.retries);
-  gpuRetryTimer=setTimeout(async()=>{
-    gpuRetryTimer=null;
-    if(gpu.ok)return;
-    log("attempting GPU recovery (try "+gpu.retries+"/5)…");
-    await gpuReinit();
-    if(!gpu.ok)scheduleGpuRecovery();
-  },delay);
-}
-
-function gpuEnsureBuffers(wBytes,rBytes){
-  const d=gpu.device;
-  if(gpu.wSize<wBytes){
-    if(gpu.wBufObj)gpu.wBufObj.destroy();
-    gpu.wSize=Math.ceil(wBytes*1.3/256)*256;
-    gpu.wBufObj=d.createBuffer({size:gpu.wSize,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
-  }
-  if(gpu.rSize<rBytes){
-    if(gpu.rBufObj)gpu.rBufObj.destroy();
-    if(gpu.readObj)gpu.readObj.destroy();
-    gpu.rSize=Math.ceil(rBytes*1.3/256)*256;
-    gpu.rBufObj=d.createBuffer({size:gpu.rSize,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC});
-    gpu.readObj=d.createBuffer({size:gpu.rSize,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST});
-  }
-  gpu.bind=gpu.device.createBindGroup({layout:gpu.pipeline.getBindGroupLayout(0),entries:[
-    {binding:0,resource:{buffer:gpu.uni}},
-    {binding:1,resource:{buffer:gpu.wBufObj,size:gpu.wSize}},
-    {binding:2,resource:{buffer:gpu.rBufObj,size:gpu.rSize}},
-  ]});
-}
-
-/* Evaluate `genomes` (array of Float32Array) on the GPU.
-   Returns {fit,app,stp} averaged over cfg.games, like the worker does.
-   Work is split into dispatches of bounded size so a huge population never
-   trips the driver's watchdog on a single submit. */
-async function gpuEvaluate(genomes,cfg,gl,seed){
-  const perDispatch=Math.max(64,Math.min(genomes.length,Math.ceil(65536/Math.max(1,cfg.games))));
-  if(genomes.length<=perDispatch)return gpuPass(genomes,cfg,gl,seed);
-  const fit=new Float32Array(genomes.length),app=new Float32Array(genomes.length),stp=new Float32Array(genomes.length);
-  for(let i=0;i<genomes.length;i+=perDispatch){
-    const part=genomes.slice(i,i+perDispatch);
-    const r=await gpuPass(part,cfg,gl,seed);
-    fit.set(r.fit,i);app.set(r.app,i);stp.set(r.stp,i);
-  }
-  return {fit,app,stp};
-}
-async function gpuPass(genomes,cfg,gl,seed){
-  const d=gpu.device;
-  const count=genomes.length;
-  const total=count*cfg.games;
-  const flat=new Float32Array(count*gl);
-  for(let i=0;i<count;i++)flat.set(genomes[i],i*gl);
-  gpuEnsureBuffers(flat.byteLength,total*3*4);
-  d.queue.writeBuffer(gpu.wBufObj,0,flat);
-  const u=new ArrayBuffer(64);
-  new Uint32Array(u,0,8).set([cfg.board,cfg.hidden,gl,cfg.games,cfg.maxSteps,cfg.starve,total,seed>>>0]);
-  new Float32Array(u,32,8).set([cfg.appleReward,cfg.stepReward,cfg.hungerPenalty,cfg.shapeWeight,cfg.revisitPenalty,cfg.collisionPenalty,0,0]);
-  d.queue.writeBuffer(gpu.uni,0,u);
-
-  const enc=d.createCommandEncoder();
-  const pass=enc.beginComputePass();
-  pass.setPipeline(gpu.pipeline);
-  pass.setBindGroup(0,gpu.bind);
-  pass.dispatchWorkgroups(Math.ceil(total/64));
-  pass.end();
-  enc.copyBufferToBuffer(gpu.rBufObj,0,gpu.readObj,0,total*3*4);
-  d.queue.submit([enc.finish()]);
-  await gpu.readObj.mapAsync(GPUMapMode.READ,0,total*3*4);
-  const raw=new Float32Array(gpu.readObj.getMappedRange(0,total*3*4).slice(0));
-  gpu.readObj.unmap();
-
-  const fit=new Float32Array(count),app=new Float32Array(count),stp=new Float32Array(count);
-  for(let i=0;i<count;i++){
-    let f=0,a=0,s=0;
-    for(let g=0;g<cfg.games;g++){const o=(i*cfg.games+g)*3;f+=raw[o];a+=raw[o+1];s+=raw[o+2]}
-    fit[i]=f/cfg.games;app[i]=a/cfg.games;stp[i]=s/cfg.games;
-  }
-  return {fit,app,stp};
-}
-
-/* =========================================================
-   Genetic algorithm (same operators, rewards and adaptive game
-   budget as the in-page trainer)
-   ========================================================= */
-const state={training:false,pool:[],gen:0,best:null,brain:null,history:[],evaluated:0,started:0,
-  stepAvg:0,gamesEff:0,gpuRate:0,cpuRate:0,gpuShare:0.5,lastRender:0,gps:0,hwScale:1};
-
-function cfgRead(){
-  return{
-    pop:+$("pop").value,
-    hidden:+$("hid").value,
-    games:+$("games").value,
-    board:+$("board").value,
-    mutRate:+$("mutR").value/100,
-    mutSize:+$("mutS").value/100,
-    elite:+$("elite").value/100,
-    workers:+$("workers").value,
-    maxGen:+$("maxGen").value,
-    maxSteps:+$("steps").value,
-    /* appleReward stays dominant on purpose — eating must always be worth
-       far more than any amount of shaping/survival reward, or the net can
-       learn to loiter instead of actually finishing the job. stepReward is
-       now just a small tie-breaker between non-eating runs (most of the
-       useful "move toward food" signal comes from shapeWeight instead,
-       since a flat per-step reward alone was rewarding aimless survival as
-       much as purposeful movement). shapeWeight is potential-based (see
-       the sense/play comments) so pacing back and forth nets ~zero — only
-       genuine progress toward the apple accumulates. revisitPenalty and
-       collisionPenalty directly target the reported failure modes: looping
-       back over recently-vacated cells, and walking straight into a wall
-       or its own body. */
-    starve:60,appleReward:300,stepReward:0.05,hungerPenalty:0.05,
-    shapeWeight:1,revisitPenalty:0.15,collisionPenalty:25,
-  };
-}
-function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
-function randomGenome(gl){const g=new Float32Array(gl);for(let i=0;i<gl;i++)g[i]=gauss()*0.5;return g}
-/* Mutation: gaussian nudges, but weights are clamped to a sane range so a
-   long run can't let them blow up into saturated, untrainable values, and a
-   small slice of mutations fully re-draw a weight instead of drifting — that
-   is what lets a stuck population escape a local optimum. */
-const WCLAMP=6;
-function mutate(g,rate,size){
-  for(let i=0;i<g.length;i++){
-    if(Math.random()<rate){
-      g[i]=(Math.random()<0.05)?gauss()*0.5:g[i]+gauss()*size;
-      if(g[i]>WCLAMP)g[i]=WCLAMP;else if(g[i]<-WCLAMP)g[i]=-WCLAMP;
-    }
-  }
-  return g;
-}
-/* Uniform crossover: a single cut point through a flat weight vector slices
-   neurons in half and usually destroys both parents' behaviour, which is why
-   offspring kept scoring worse than their parents. Per-weight inheritance
-   (with an occasional blend) mixes parents without wrecking them. */
-function crossover(a,b){
-  const c=new Float32Array(a.length);
-  const blend=Math.random()<0.3;
-  for(let i=0;i<a.length;i++)c[i]=blend?(a[i]+b[i])*0.5:(Math.random()<0.5?a[i]:b[i]);
-  return c;
-}
-/* Tournament selection over the fitter half of the ranked population: with
-   fair, shared-seed scoring the ranking is meaningful, so there is no reason
-   to keep drawing parents from the bottom half. */
-function tournament(ranked,k){
-  const cap=Math.max(2,Math.floor(ranked.length/2));
-  let best=null;
-  for(let i=0;i<k;i++){const c=ranked[Math.floor(Math.random()*cap)];if(!best||c.fit>best.fit)best=c}
-  return best;
-}
-
 function spawnPool(count){
   killPool();
   for(let i=0;i<count;i++)state.pool.push(new Worker(workerUrl()));
+  state.evalWorker=new Worker(workerUrl());
 }
-function killPool(){state.pool.forEach(w=>w.terminate());state.pool=[]}
-
-/* CPU half: shared task queue so one slow core can't hold up a generation */
-function cpuEvaluate(genomes,cfg,gl,baseSeed,offset){
-  const workers=state.pool;
-  const out=[];
-  if(!workers.length||!genomes.length)return Promise.resolve(out);
-  const per=Math.max(2,Math.ceil(genomes.length/(workers.length*4)));
-  const tasks=[];
-  for(let i=0;i<genomes.length;i+=per)tasks.push({from:i,count:Math.min(per,genomes.length-i)});
-  let next=0;
-  return Promise.all(workers.map(w=>new Promise(resolve=>{
-    const feed=()=>{
-      if(next>=tasks.length||!state.training){w.onmessage=null;resolve();return}
-      const task=tasks[next++];
-      const flat=new Float32Array(task.count*gl);
-      for(let i=0;i<task.count;i++)flat.set(genomes[task.from+i],i*gl);
-      w.onmessage=e=>{out.push({from:task.from,count:task.count,fit:e.data.fit,app:e.data.app,stp:e.data.stp});feed()};
-      w.postMessage({id:task.from,weights:flat,count:task.count,geneLen:gl,cfg,seed:baseSeed|0},[flat.buffer]);
-    };
-    feed();
-  }))).then(()=>out);
+function killPool(){
+  state.pool.forEach(w=>w.terminate());state.pool=[];
+  if(state.evalWorker){state.evalWorker.terminate();state.evalWorker=null}
 }
 
-async function evaluate(pop,cfg,gl,seed){
-  const fit=new Float32Array(pop.length),app=new Float32Array(pop.length),stp=new Float32Array(pop.length);
-  const manual=+$("gpu").value;
-  const auto=$("autoSplit").checked;
-  let share=0;
-  if(!gpu.ok){
-    share=0;
-  }else if(!state.pool.length){
-    /* no CPU workers spawned this run (manual 100% and auto both off) */
-    share=1;
-  }else if(auto){
-    /* Auto-balance: pick the split that finishes the GPU slice and the
-       CPU slice at the same time, which is what maximizes genomes/sec
-       (and therefore gens/sec — more gens/sec means faster convergence
-       toward a better score). Each pass's measured throughput
-       (gpuRate/cpuRate, in genomes/sec) updates an EMA, and the target
-       share is just each side's fraction of the combined throughput.
-       Starts at an even 50/50 split before any measurements exist. */
-    if(state.gpuRate>0&&state.cpuRate>0)share=state.gpuRate/(state.gpuRate+state.cpuRate);
-    else share=0.5;
-    share=Math.min(0.97,Math.max(0.03,share));
+/* =========================================================
+   Main-thread learner: replay buffer, online/target nets, Adam,
+   n-step Double-DQN update, exploration controller, evaluation.
+   ========================================================= */
+const state={training:false,pool:[],evalWorker:null,episode:0,bestScore:0,brain:null,history:[],
+  online:null,target:null,adamM:null,adamV:null,adamT:0,rb:null,grad:null,
+  recentScores:[],recentRewards:[],recentLen:[],recentLoss:[],recentQ:[],recentQMax:[],recentTD:[],
+  actionCounts:[0,0,0],deaths:{},evalDeaths:{},
+  evalHistory:[],evalAvg:0,evalBest:0,evalLen:0,evalApples:0,evalBusy:false,evalStepMark:0,
+  totalSteps:0,started:0,lastRender:0,gps:0,lastEpTime:0,
+  gpuLoad:1,cpuLoad:1,loadMul:1,stepsPerChunk:200,activeWorkers:1,renderEvery:200,
+  perf:{learnSamples:0,cpuPer:0,gpuPer:0,renderMs:0,chunkMs:0,lastChunk:0,cpuBlockMs:0,gpuSkips:0,gpuRuns:0},
+  tune:null,learnChain:Promise.resolve(),learnUpdates:0,learnSamples:0,
+  plateauTicks:0,exploreBoost:0,epsFloor:0.05,epsSteps:0};
+
+const ema=(prev,v,a)=>prev?prev*(1-(a||0.25))+v*(a||0.25):v;
+const clamp=(v,lo,hi)=>v<lo?lo:(v>hi?hi:v);
+
+/* =========================================================
+   WebGPU gradient backend. Same three-pass design as before, updated for
+   the new target: per-sample discount (gamma^k for n-step), per-sample
+   importance weight, and extra diagnostics (raw TD error, Q max).
+   ========================================================= */
+const GPU={ready:false,fail:null,dev:null,info:"",gl:0,hid:0,cap:0,busy:false};
+const GPU_WGSL=`
+struct Cfg { hid:u32, n:u32, gl:u32, pad:f32 };
+@group(0) @binding(0) var<uniform> cfg : Cfg;
+@group(0) @binding(1) var<storage, read> WW : array<f32>;
+@group(0) @binding(2) var<storage, read> X : array<f32>;
+@group(0) @binding(3) var<storage, read> META : array<f32>;
+@group(0) @binding(4) var<storage, read_write> SCR : array<f32>;
+@group(0) @binding(5) var<storage, read_write> GRAD : array<f32>;
+@group(0) @binding(6) var<storage, read_write> OUTS : array<f32>;
+const NIN : u32 = 12u;
+const NOUT : u32 = 3u;
+
+fn wget(useTarget:bool, p:u32) -> f32 {
+  if (useTarget) { return WW[cfg.gl + p]; }
+  return WW[p];
+}
+fn xget(i:u32, useNext:bool, k:u32) -> f32 {
+  let base = i * 2u * NIN;
+  if (useNext) { return X[base + NIN + k]; }
+  return X[base + k];
+}
+fn forwardQ(useTarget:bool, useNext:bool, i:u32, hOut: ptr<function, array<f32,64>>) -> vec4<f32> {
+  let hid = cfg.hid;
+  var h : array<f32,64>;
+  var p : u32 = 0u;
+  for (var j:u32 = 0u; j < hid; j = j + 1u) {
+    var s = 0.0;
+    for (var k:u32 = 0u; k < NIN; k = k + 1u) { s = s + wget(useTarget, p) * xget(i, useNext, k); p = p + 1u; }
+    h[j] = s;
+  }
+  for (var j:u32 = 0u; j < hid; j = j + 1u) { h[j] = tanh(h[j] + wget(useTarget, p)); p = p + 1u; }
+  var q = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+  for (var o:u32 = 0u; o < NOUT; o = o + 1u) {
+    var s = 0.0;
+    for (var j:u32 = 0u; j < hid; j = j + 1u) { s = s + wget(useTarget, p) * h[j]; p = p + 1u; }
+    q[o] = s;
+  }
+  for (var o:u32 = 0u; o < NOUT; o = o + 1u) { q[o] = q[o] + wget(useTarget, p); p = p + 1u; }
+  for (var j:u32 = 0u; j < hid; j = j + 1u) { (*hOut)[j] = h[j]; }
+  return q;
+}
+
+@compute @workgroup_size(64)
+fn pass1(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= cfg.n) { return; }
+  let hid = cfg.hid;
+  let n = cfg.n;
+  var h : array<f32,64>;
+  var q = forwardQ(false, false, i, &h);
+  let a = u32(META[i]);
+  let r = META[n + i];
+  let done = META[2u * n + i];
+  let disc = META[3u * n + i];
+  let isw = META[4u * n + i];
+  var tgt = r;
+  if (done < 0.5) {
+    var hn : array<f32,64>;
+    var qn = forwardQ(false, true, i, &hn);
+    var bi : u32 = 0u;
+    var foundSafe = false;
+    for (var o:u32 = 0u; o < NOUT; o = o + 1u) {
+      if (xget(i, true, o) < 0.5 && (!foundSafe || qn[o] > qn[bi])) { bi = o; foundSafe = true; }
+    }
+    if (!foundSafe) {
+      bi = 0u;
+      for (var o2:u32 = 1u; o2 < NOUT; o2 = o2 + 1u) { if (qn[o2] > qn[bi]) { bi = o2; } }
+    }
+    var ht : array<f32,64>;
+    var qt = forwardQ(true, true, i, &ht);
+    tgt = r + disc * qt[bi];
+  }
+  let err = q[a] - tgt;
+  let cl = clamp(err, -1.0, 1.0);
+  let hOff = n;
+  let lOff = n + n * hid;
+  SCR[i] = cl * isw;
+  for (var j:u32 = 0u; j < hid; j = j + 1u) { SCR[hOff + i * hid + j] = h[j]; }
+  SCR[lOff + i] = 0.5 * cl * cl + max(0.0, abs(err) - 1.0);
+  SCR[lOff + n + i] = q[a];
+  SCR[lOff + 2u * n + i] = err;
+}
+
+@compute @workgroup_size(64)
+fn pass2(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let g = gid.x;
+  if (g >= cfg.gl) { return; }
+  let hid = cfg.hid;
+  let n = cfg.n;
+  let w1n = hid * NIN;
+  let b1off = w1n;
+  let w2off = b1off + hid;
+  let b2off = w2off + hid * NOUT;
+  let hOff = n;
+  var acc = 0.0;
+  if (g < w1n) {
+    let j = g / NIN;
+    let k = g % NIN;
+    for (var i:u32 = 0u; i < n; i = i + 1u) {
+      let a = u32(META[i]);
+      let hv = SCR[hOff + i * hid + j];
+      let dz = SCR[i] * wget(false, w2off + a * hid + j) * (1.0 - hv * hv);
+      acc = acc + dz * xget(i, false, k);
+    }
+  } else if (g < w2off) {
+    let j = g - b1off;
+    for (var i:u32 = 0u; i < n; i = i + 1u) {
+      let a = u32(META[i]);
+      let hv = SCR[hOff + i * hid + j];
+      acc = acc + SCR[i] * wget(false, w2off + a * hid + j) * (1.0 - hv * hv);
+    }
+  } else if (g < b2off) {
+    let idx = g - w2off;
+    let o = idx / hid;
+    let j = idx % hid;
+    for (var i:u32 = 0u; i < n; i = i + 1u) {
+      if (u32(META[i]) == o) { acc = acc + SCR[i] * SCR[hOff + i * hid + j]; }
+    }
+  } else {
+    let o = g - b2off;
+    for (var i:u32 = 0u; i < n; i = i + 1u) {
+      if (u32(META[i]) == o) { acc = acc + SCR[i]; }
+    }
+  }
+  GRAD[g] = acc / f32(n);
+}
+
+@compute @workgroup_size(1)
+fn pass3() {
+  let n = cfg.n;
+  let lOff = n + n * cfg.hid;
+  var ls = 0.0;
+  var qs = 0.0;
+  var qm = -1.0e30;
+  var ts = 0.0;
+  for (var i:u32 = 0u; i < n; i = i + 1u) {
+    ls = ls + SCR[lOff + i];
+    let qv = SCR[lOff + n + i];
+    qs = qs + qv;
+    if (qv > qm) { qm = qv; }
+    ts = ts + abs(SCR[lOff + 2u * n + i]);
+  }
+  OUTS[0] = ls / f32(n);
+  OUTS[1] = qs / f32(n);
+  OUTS[2] = qm;
+  OUTS[3] = ts / f32(n);
+}
+`;
+
+async function gpuInit(){
+  if(GPU.ready)return true;
+  if(GPU.fail)return false;
+  if(!("gpu" in navigator)){GPU.fail="this browser has no WebGPU";return false}
+  try{
+    const adapter=await navigator.gpu.requestAdapter({powerPreference:"high-performance"});
+    if(!adapter){GPU.fail="no WebGPU adapter available";return false}
+    const dev=await adapter.requestDevice();
+    const mod=dev.createShaderModule({code:GPU_WGSL});
+    const bgl=dev.createBindGroupLayout({entries:[
+      {binding:0,visibility:GPUShaderStage.COMPUTE,buffer:{type:"uniform"}},
+      {binding:1,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
+      {binding:2,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
+      {binding:3,visibility:GPUShaderStage.COMPUTE,buffer:{type:"read-only-storage"}},
+      {binding:4,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+      {binding:5,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+      {binding:6,visibility:GPUShaderStage.COMPUTE,buffer:{type:"storage"}},
+    ]});
+    const layout=dev.createPipelineLayout({bindGroupLayouts:[bgl]});
+    GPU.dev=dev;GPU.bgl=bgl;
+    GPU.p1=dev.createComputePipeline({layout,compute:{module:mod,entryPoint:"pass1"}});
+    GPU.p2=dev.createComputePipeline({layout,compute:{module:mod,entryPoint:"pass2"}});
+    GPU.p3=dev.createComputePipeline({layout,compute:{module:mod,entryPoint:"pass3"}});
+    let name="WebGPU device";
+    try{const ai=adapter.info||(adapter.requestAdapterInfo?await adapter.requestAdapterInfo():null);
+      if(ai&&(ai.description||ai.vendor))name=(ai.description||ai.vendor)+(ai.architecture?" ("+ai.architecture+")":"")}catch(e){}
+    GPU.info=name;GPU.ready=true;
+    return true;
+  }catch(e){GPU.fail=e.message||String(e);return false}
+}
+
+function gpuAlloc(gl,hid,cap){
+  const dev=GPU.dev;
+  if(GPU.gl===gl&&GPU.hid===hid&&GPU.cap>=cap)return;
+  [GPU.ww,GPU.x,GPU.meta,GPU.scr,GPU.grad,GPU.outs,GPU.stgG,GPU.stgO,GPU.stgP].forEach(b=>{try{b&&b.destroy()}catch(e){}});
+  const S=GPUBufferUsage.STORAGE,CS=GPUBufferUsage.COPY_SRC,CD=GPUBufferUsage.COPY_DST;
+  GPU.cap=cap;GPU.gl=gl;GPU.hid=hid;
+  GPU.cfgBuf=GPU.cfgBuf||dev.createBuffer({size:16,usage:GPUBufferUsage.UNIFORM|CD});
+  GPU.ww=dev.createBuffer({size:gl*2*4,usage:S|CD});
+  GPU.x=dev.createBuffer({size:cap*2*IN*4,usage:S|CD});
+  GPU.meta=dev.createBuffer({size:cap*5*4,usage:S|CD});
+  GPU.scr=dev.createBuffer({size:cap*(hid+4)*4,usage:S|CS});
+  GPU.grad=dev.createBuffer({size:gl*4,usage:S|CS});
+  GPU.outs=dev.createBuffer({size:16,usage:S|CS});
+  GPU.stgG=dev.createBuffer({size:gl*4,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+  GPU.stgO=dev.createBuffer({size:16,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+  GPU.stgP=dev.createBuffer({size:cap*4,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+  GPU.bg=dev.createBindGroup({layout:GPU.bgl,entries:[
+    {binding:0,resource:{buffer:GPU.cfgBuf}},{binding:1,resource:{buffer:GPU.ww}},
+    {binding:2,resource:{buffer:GPU.x}},{binding:3,resource:{buffer:GPU.meta}},
+    {binding:4,resource:{buffer:GPU.scr}},{binding:5,resource:{buffer:GPU.grad}},
+    {binding:6,resource:{buffer:GPU.outs}}]});
+  GPU.xHost=new Float32Array(cap*2*IN);
+  GPU.mHost=new Float32Array(cap*5);
+  GPU.gHost=new Float32Array(gl);
+  GPU.uHost=new ArrayBuffer(16);
+}
+
+async function gpuGradStep(cfg,gl,n){
+  const dev=GPU.dev,hid=cfg.hidden;
+  gpuAlloc(gl,hid,Math.max(n,GPU.cap||0));
+  const rb=state.rb,xs=GPU.xHost,ms=GPU.mHost;
+  if(!GPU.idxHost||GPU.idxHost.length<n)GPU.idxHost=new Uint32Array(n);
+  const batchIdx=sampleBatch(rb,n);
+  for(let i=0;i<n;i++){
+    const idx=batchIdx[i];
+    GPU.idxHost[i]=idx;
+    xs.set(rb.s.subarray(idx*IN,idx*IN+IN),i*2*IN);
+    xs.set(rb.ns.subarray(idx*IN,idx*IN+IN),i*2*IN+IN);
+    ms[i]=rb.a[idx];ms[n+i]=rb.r[idx];ms[2*n+i]=rb.d[idx];
+    ms[3*n+i]=rb.g[idx];ms[4*n+i]=isWeight(rb,idx);
+  }
+  const u32=new Uint32Array(GPU.uHost);
+  u32[0]=hid;u32[1]=n;u32[2]=gl;
+  dev.queue.writeBuffer(GPU.cfgBuf,0,GPU.uHost);
+  dev.queue.writeBuffer(GPU.ww,0,state.online,0,gl);
+  dev.queue.writeBuffer(GPU.ww,gl*4,state.target,0,gl);
+  dev.queue.writeBuffer(GPU.x,0,xs,0,n*2*IN);
+  dev.queue.writeBuffer(GPU.meta,0,ms,0,n*5);
+  const t0=performance.now();
+  const enc=dev.createCommandEncoder();
+  const p=enc.beginComputePass();
+  p.setBindGroup(0,GPU.bg);
+  p.setPipeline(GPU.p1);p.dispatchWorkgroups(Math.ceil(n/64));
+  p.setPipeline(GPU.p2);p.dispatchWorkgroups(Math.ceil(gl/64));
+  p.setPipeline(GPU.p3);p.dispatchWorkgroups(1);
+  p.end();
+  const errByteOff=(n+n*hid+2*n)*4;
+  enc.copyBufferToBuffer(GPU.grad,0,GPU.stgG,0,gl*4);
+  enc.copyBufferToBuffer(GPU.outs,0,GPU.stgO,0,16);
+  enc.copyBufferToBuffer(GPU.scr,errByteOff,GPU.stgP,0,n*4);
+  dev.queue.submit([enc.finish()]);
+  await Promise.all([
+    GPU.stgG.mapAsync(GPUMapMode.READ),
+    GPU.stgO.mapAsync(GPUMapMode.READ),
+    GPU.stgP.mapAsync(GPUMapMode.READ)
+  ]);
+  const ms2=performance.now()-t0;
+  GPU.gHost.set(new Float32Array(GPU.stgG.getMappedRange()));
+  const st=new Float32Array(GPU.stgO.getMappedRange().slice(0));
+  const td=new Float32Array(GPU.stgP.getMappedRange().slice(0));
+  GPU.stgG.unmap();GPU.stgO.unmap();GPU.stgP.unmap();
+  state.adamT++;
+  clipGrad(GPU.gHost);
+  adamStep(state.online,GPU.gHost,state.adamM,state.adamV,cfg.lr,state.adamT);
+  for(let i=0;i<n;i++)setPriority(rb,GPU.idxHost[i],Math.abs(td[i]));
+  state.learnUpdates++;
+  state.learnSamples+=n;
+  maybeSyncTarget(cfg);
+  return{loss:st[0],avgQ:st[1],qMax:st[2],td:st[3],samples:n,ms:ms2};
+}
+
+function cfgRead(){
+  return{
+    hidden:+$("hid").value,
+    board:+$("board").value,
+    maxSteps:+$("steps").value,
+    workers:Math.max(1,+$("workers").value),
+    replayCap:+$("pop").value,
+    batch:+$("games").value,
+    /* Target network refreshes on optimizer updates, not episodes: episode
+       pace changes by an order of magnitude as the snake improves. */
+    targetSyncUpdates:1500,
+    epsDecaySteps:2000000,
+    epsDecayEpisodes:Math.max(1,+$("mutR").value),
+    lr:(+$("mutS").value)*1e-5,
+    maxEpisodes:+$("maxGen").value,
+    nstep:NSTEP,
+    /* gamma 0.99 with rewards in [-1,1] keeps |Q| around 10 at most, so
+       Q-values stay in a range a tanh-hidden net can actually represent. */
+    gamma:0.99,
+    epsStart:1.0,epsEnd:0.02,
+    starve:80,
+    appleReward:1,stepCost:0.002,shapeWeight:0.02,deathPenalty:1,
+  };
+}
+function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+function randomWeights(gl){const g=new Float32Array(gl);for(let i=0;i<gl;i++)g[i]=gauss()*0.15;return g}
+
+/* =========================================================
+   Replay buffer.
+   Every transition carries its n-step discount (g), a terminal flag (d)
+   and a class tag: 1 apple, 2 death, 3 danger-adjacent, 0 ordinary.
+   Sampling mixes (a) class quotas so rare-but-decisive transitions are
+   always represented, and (b) priority (|TD|) inside the picked class, and
+   (c) a uniform share so diversity is never destroyed. Importance weights
+   compensate the resulting bias.
+   ========================================================= */
+const PRI_ALPHA=0.5,PRI_BETA=0.5;
+const CLASS_QUOTA=[0.30,0.28,0.14,0.28]; // apple, death, danger, ordinary
+function makeReplay(cap){
+  return{cap,size:0,ptr:0,
+    s:new Float32Array(cap*IN),ns:new Float32Array(cap*IN),
+    a:new Uint8Array(cap),r:new Float32Array(cap),d:new Uint8Array(cap),
+    g:new Float32Array(cap),cls:new Uint8Array(cap),
+    p:new Float32Array(cap),maxP:1,pSum:0,
+    counts:[0,0,0,0],
+    idx:[[],[],[],[]],pos:[0,0,0,0]};
+}
+function rbClassLists(rb){return rb.idx}
+function rbPush(rb,s,a,r,ns,d,g,cls){
+  const i=rb.ptr;
+  if(rb.size===rb.cap){
+    const old=rb.cls[i];rb.counts[old]--;
+  }
+  rb.s.set(s,i*IN);rb.ns.set(ns,i*IN);
+  rb.a[i]=a;rb.r[i]=r;rb.d[i]=d;rb.g[i]=g;rb.cls[i]=cls;
+  rb.p[i]=Math.max(rb.maxP,1e-3);
+  rb.counts[cls]++;
+  rb.ptr=(rb.ptr+1)%rb.cap;if(rb.size<rb.cap)rb.size++;
+}
+function setPriority(rb,i,tdAbs){
+  const p=Math.pow(tdAbs+1e-3,PRI_ALPHA);
+  rb.p[i]=p;
+  if(p>rb.maxP)rb.maxP=p*0.999+rb.maxP*0.001;
+}
+function isWeight(rb,i){
+  // Cheap, bounded importance weight: relative to the mean priority.
+  const mean=rb.maxP*0.35+1e-3;
+  const w=Math.pow(mean/Math.max(rb.p[i],1e-4),PRI_BETA);
+  return clamp(w,0.25,2.5);
+}
+/* Draw one index of a requested class using a small priority tournament.
+   Rejection sampling keeps this O(1) — no sum tree, no O(N) scan — and the
+   uniform fallback guarantees a diverse batch even when a class is empty. */
+function sampleClass(rb,cls){
+  if(!rb.counts[cls])return -1;
+  let best=-1,bp=-1;
+  for(let t=0;t<12;t++){
+    const i=Math.floor(Math.random()*rb.size);
+    if(rb.cls[i]!==cls)continue;
+    const p=rb.p[i]||1;
+    if(p>bp){bp=p;best=i}
+    if(t>=5&&best>=0)break;
+  }
+  return best;
+}
+function sampleBatch(rb,n){
+  if(!state._batchIdx||state._batchIdx.length<n)state._batchIdx=new Uint32Array(n);
+  const out=state._batchIdx;
+  for(let i=0;i<n;i++){
+    let idx=-1;
+    const u=Math.random();
+    if(u<0.30){
+      idx=Math.floor(Math.random()*rb.size); // pure uniform share
+    }else{
+      let acc=0,cls=3;
+      const q=Math.random();
+      for(let c=0;c<4;c++){acc+=CLASS_QUOTA[c];if(q<=acc){cls=c===0?1:(c===1?2:(c===2?3:0));break}}
+      idx=sampleClass(rb,cls);
+      if(idx<0)idx=Math.floor(Math.random()*rb.size);
+    }
+    out[i]=idx;
+  }
+  return out;
+}
+
+function qForward(w,hid,x,hAct,qOut){
+  let p=0;
+  for(let j=0;j<hid;j++){let s=0;for(let k=0;k<IN;k++)s+=w[p++]*x[k];hAct[j]=s}
+  for(let j=0;j<hid;j++)hAct[j]=Math.tanh(hAct[j]+w[p++]);
+  for(let o=0;o<OUT;o++){let s=0;for(let j=0;j<hid;j++)s+=w[p++]*hAct[j];qOut[o]=s}
+  for(let o=0;o<OUT;o++)qOut[o]+=w[p++];
+}
+function accumulateGrad(grad,onlineW,hid,x,hAct,a,delta){
+  const w1n=hid*IN,b1off=w1n,w2off=b1off+hid,b2off=w2off+hid*OUT;
+  grad[b2off+a]+=delta;
+  for(let j=0;j<hid;j++)grad[w2off+a*hid+j]+=delta*hAct[j];
+  for(let j=0;j<hid;j++){
+    const w2aj=onlineW[w2off+a*hid+j];
+    const dz=(delta*w2aj)*(1-hAct[j]*hAct[j]);
+    grad[b1off+j]+=dz;
+    const base=j*IN;
+    for(let k=0;k<IN;k++)grad[base+k]+=dz*x[k];
+  }
+}
+/* Global-norm gradient clipping: with Huber-clipped per-sample deltas the
+   batch gradient is already bounded, but clipping the norm as well keeps a
+   rare pathological batch from moving the weights far enough to destabilise
+   the target. */
+function clipGrad(grad,maxNorm){
+  const lim=maxNorm||5;
+  let n2=0;
+  for(let i=0;i<grad.length;i++)n2+=grad[i]*grad[i];
+  const n=Math.sqrt(n2);
+  if(n>lim){const s=lim/n;for(let i=0;i<grad.length;i++)grad[i]*=s}
+  return n;
+}
+function maybeSyncTarget(cfg){
+  const every=Math.max(200,Math.round(cfg.targetSyncUpdates||1500));
+  if(!state._nextTargetUpdate)state._nextTargetUpdate=every;
+  if(state.learnUpdates>=state._nextTargetUpdate){
+    state.target.set(state.online);
+    state._nextTargetUpdate=state.learnUpdates+every;
+  }
+}
+function adamStep(w,grad,m,v,lr,t){
+  const b1=0.9,b2=0.999,eps=1e-8;
+  const bc1=1-Math.pow(b1,t),bc2=1-Math.pow(b2,t);
+  for(let i=0;i<w.length;i++){
+    const g=grad[i];
+    m[i]=b1*m[i]+(1-b1)*g;
+    v[i]=b2*v[i]+(1-b2)*g*g;
+    const mh=m[i]/bc1,vh=v[i]/bc2;
+    w[i]-=lr*mh/(Math.sqrt(vh)+eps);
+    if(w[i]>WCLAMP)w[i]=WCLAMP;else if(w[i]<-WCLAMP)w[i]=-WCLAMP;
+  }
+}
+
+/* One n-step Double-DQN minibatch:
+     target = R_n + (1-done) * gamma^k * Q_target(s', argmax_a' Q_online(s'|safe))
+   R_n and gamma^k come from the worker, so truncated episodes (move cap,
+   starvation) bootstrap correctly while real deaths do not. */
+function trainMinibatch(cfg,gl){
+  const rb=state.rb;
+  if(!rb||rb.size<Math.min(cfg.batch,rb.cap))return null;
+  const hid=cfg.hidden;
+  if(!state._hA||state._hA.length!==hid){
+    state._hA=new Float32Array(hid);state._hAn=new Float32Array(hid);state._hAt=new Float32Array(hid);
+  }
+  if(!state._q){state._q=new Float32Array(OUT);state._qn=new Float32Array(OUT);state._qt=new Float32Array(OUT)}
+  if(!state.grad||state.grad.length!==gl)state.grad=new Float32Array(gl);
+  const grad=state.grad;grad.fill(0);
+  const B=cfg.batch;
+  const batchIdx=sampleBatch(rb,B);
+  let lossSum=0,qSum=0,qMax=-Infinity,tdSum=0;
+  for(let b=0;b<B;b++){
+    const idx=batchIdx[b];
+    const s=rb.s.subarray(idx*IN,idx*IN+IN);
+    const ns=rb.ns.subarray(idx*IN,idx*IN+IN);
+    const a=rb.a[idx],r=rb.r[idx],done=rb.d[idx],disc=rb.g[idx]||Math.pow(cfg.gamma,cfg.nstep);
+    qForward(state.online,hid,s,state._hA,state._q);
+    let target=r;
+    if(!done){
+      qForward(state.online,hid,ns,state._hAn,state._qn);
+      let bestA=-1;
+      for(let o=0;o<OUT;o++)if(ns[o]<0.5&&(bestA<0||state._qn[o]>state._qn[bestA]))bestA=o;
+      if(bestA<0){bestA=0;for(let o=1;o<OUT;o++)if(state._qn[o]>state._qn[bestA])bestA=o}
+      qForward(state.target,hid,ns,state._hAt,state._qt);
+      target=r+disc*state._qt[bestA];
+    }
+    const err=state._q[a]-target;
+    setPriority(rb,idx,Math.abs(err));
+    const clipped=Math.max(-1,Math.min(1,err))*isWeight(rb,idx);
+    lossSum+=0.5*Math.min(1,Math.abs(err))*Math.min(1,Math.abs(err))+Math.max(0,Math.abs(err)-1);
+    qSum+=state._q[a];tdSum+=Math.abs(err);
+    if(state._q[a]>qMax)qMax=state._q[a];
+    accumulateGrad(grad,state.online,hid,s,state._hA,a,clipped);
+  }
+  for(let i=0;i<gl;i++)grad[i]/=B;
+  clipGrad(grad);
+  state.adamT++;
+  adamStep(state.online,grad,state.adamM,state.adamV,cfg.lr,state.adamT);
+  state.learnUpdates++;
+  state.learnSamples+=B;
+  maybeSyncTarget(cfg);
+  return{loss:lossSum/B,avgQ:qSum/B,qMax:qMax,td:tdSum/B};
+}
+
+/* =========================================================
+   Exploration controller.
+   Epsilon anneals over ENVIRONMENT STEPS (episode length changes wildly as
+   the snake improves, so episode-count decay is meaningless), and is then
+   modulated by the GREEDY EVALUATION score, not by the noisy training
+   score:
+     - evaluation improving  -> floor drops, exploitation increases
+     - evaluation flat for several evaluations -> plateau: epsilon is lifted
+       back up for a while so the policy can escape its local strategy
+     - action collapse (one action >92% of the time) also lifts epsilon
+   ========================================================= */
+const EXPLORE={boostLevel:0.30,boostDecay:0.85,plateauEvals:3,collapse:0.92};
+function currentEpsilon(cfg){
+  const progress=state.epsSteps/Math.max(1,cfg.epsDecaySteps);
+  const base=cfg.epsStart-(cfg.epsStart-state.epsFloor)*Math.min(1,progress);
+  return clamp(Math.max(base,state.exploreBoost,state.epsFloor),0.01,1);
+}
+function actionShare(){
+  const c=state.actionCounts,t=c[0]+c[1]+c[2];
+  if(!t)return[0,0,0];
+  return[c[0]/t,c[1]/t,c[2]/t];
+}
+function onEvalResult(cfg,results){
+  const apples=results.map(r=>r.apples),lens=results.map(r=>r.steps);
+  const a=avg(apples),best=Math.max.apply(null,apples);
+  state.evalAvg=a;state.evalApples=a;state.evalLen=avg(lens);
+  if(best>state.evalBest)state.evalBest=best;
+  results.forEach(r=>{state.evalDeaths[r.death]=(state.evalDeaths[r.death]||0)+1});
+  state.evalHistory.push(a);
+  if(state.evalHistory.length>40)state.evalHistory.shift();
+  const hist=state.evalHistory;
+  const prevBest=hist.length>1?Math.max.apply(null,hist.slice(0,-1)):0;
+  if(a>prevBest+0.25){
+    // Real, measured improvement: exploit more.
+    state.plateauTicks=0;
+    state.exploreBoost*=0.5;
+    state.epsFloor=clamp(state.epsFloor*0.9,cfg.epsEnd,0.2);
+    log("eval "+a.toFixed(2)+" apples (best "+state.evalBest+", "+Math.round(state.evalLen)+" steps) — improving, exploiting more (eps floor "+state.epsFloor.toFixed(3)+")");
   }else{
-    share=manual/100;
+    state.plateauTicks++;
+    const share=actionShare();
+    const collapsed=Math.max(share[0],share[1],share[2])>EXPLORE.collapse;
+    if(state.plateauTicks>=EXPLORE.plateauEvals||collapsed){
+      state.exploreBoost=clamp(Math.max(state.exploreBoost,EXPLORE.boostLevel)*1.15,0,0.6);
+      state.epsFloor=clamp(state.epsFloor*1.25,cfg.epsEnd,0.2);
+      state.plateauTicks=0;
+      log("eval "+a.toFixed(2)+" apples — "+(collapsed?"policy collapsed onto one action":"no measured progress")+", widening exploration to "+state.exploreBoost.toFixed(2));
+    }else{
+      log("eval "+a.toFixed(2)+" apples (best "+state.evalBest+", "+Math.round(state.evalLen)+" steps)");
+    }
   }
-  state.gpuShare=share;
-  let nGpu=Math.round(pop.length*share);
-  if(!gpu.ok)nGpu=0;
-  else if(!state.pool.length)nGpu=pop.length;
-  else nGpu=Math.min(pop.length,Math.max(1,nGpu));
-  const gpuSlice=pop.slice(0,nGpu);
-  const cpuSlice=pop.slice(nGpu);
+}
+function maybeEvaluate(cfg){
+  if(!state.training||!state.evalWorker||state.evalBusy)return;
+  if(state.totalSteps-state.evalStepMark<cfg.evalEvery)return;
+  state.evalStepMark=state.totalSteps;
+  state.evalBusy=true;
+  const w=new Float32Array(state.online);
+  state.evalWorker.onmessage=e=>{
+    state.evalBusy=false;
+    if(e.data&&e.data.mode==='eval')onEvalResult(cfg,e.data.results);
+  };
+  state.evalWorker.postMessage({mode:'eval',weights:w,hidden:cfg.hidden,cfg,episodes:cfg.evalEpisodes,seed:(Math.random()*2**31)|0});
+}
+// Boost decays with fresh experience so a temporary widening does not stick.
+function decayBoost(){
+  if(state.exploreBoost>0.005)state.exploreBoost*=EXPLORE.boostDecay;
+  else state.exploreBoost=0;
+}
 
-  const jobs=[];
-  if(gpuSlice.length){
-    const t0=performance.now();
-    jobs.push(gpuEvaluate(gpuSlice,cfg,gl,seed).then(r=>{
-      const ms=performance.now()-t0;
-      const rate=gpuSlice.length*cfg.games/(ms/1000);
-      state.gpuRate=state.gpuRate?state.gpuRate*0.6+rate*0.4:rate;
-      fit.set(r.fit,0);app.set(r.app,0);stp.set(r.stp,0);
-    }).catch(async e=>{
-      handleGpuLoss("pass failed: "+e.message);
-      /* Don't let a mid-generation GPU crash score its whole slice as the
-         worst of the population (zeros) — handleGpuLoss has already made
-         sure a CPU pool exists, so replay just this slice there instead of
-         losing the generation's work for those genomes. */
-      if(state.training&&state.pool.length){
-        try{
-          const chunks=await cpuEvaluate(gpuSlice,cfg,gl,seed,0);
-          chunks.forEach(c=>{for(let i=0;i<c.count;i++){const idx=c.from+i;fit[idx]=c.fit[i];app[idx]=c.app[i];stp[idx]=c.stp[i]}});
-          log("recovered "+gpuSlice.length+" genome(s) on CPU after the GPU pass failed");
-        }catch(e2){/* fallback also failed — those genomes keep a zero score for this generation only */}
+function avg(arr){return arr.length?arr.reduce((s,v)=>s+v,0)/arr.length:0}
+function pushRolling(arr,v,max){arr.push(v);if(arr.length>max)arr.shift()}
+
+function maybeAutoSteps(cfg){
+  if(!$("autoSteps").checked)return;
+  if(state.episode<20||state.episode%10!==0)return;
+  if(state._lastAutoStepsEp===state.episode)return;
+  state._lastAutoStepsEp=state.episode;
+  const stepsMin=+$("steps").min,stepsMax=+$("steps").max,stepsStepV=+$("steps").step;
+  const recent=state.recentLen.slice(-50);
+  if(!recent.length)return;
+  const avgLen=avg(recent);
+  const nearCapFrac=recent.filter(v=>v>=cfg.maxSteps*0.9).length/recent.length;
+  let newSteps=cfg.maxSteps;
+  if(nearCapFrac>0.3)newSteps=Math.min(stepsMax,Math.round(cfg.maxSteps*1.25/stepsStepV)*stepsStepV);
+  else if(avgLen<cfg.maxSteps*0.35)newSteps=Math.max(stepsMin,Math.round(cfg.maxSteps*0.85/stepsStepV)*stepsStepV);
+  if(newSteps!==cfg.maxSteps){
+    const raising=newSteps>cfg.maxSteps;
+    log("auto move-limit: "+(raising?"raising":"lowering")+" to "+newSteps);
+    cfg.maxSteps=newSteps;
+    setSlider("steps",newSteps);
+  }
+}
+
+function recordHistoryPoint(cfg){
+  state.history.push({
+    episode:state.episode,
+    best:state.bestScore,
+    avgScore:avg(state.recentScores),
+    evalScore:state.evalAvg,
+    avgReward:avg(state.recentRewards),
+    avgLen:avg(state.recentLen),
+    loss:avg(state.recentLoss),
+    avgQ:avg(state.recentQ),
+    epsilon:currentEpsilon(cfg),
+  });
+  if(state.history.length>360)state.history.shift();
+}
+
+function ingestChunk(data,cfg){
+  const rb=state.rb;
+  for(let i=0;i<data.count;i++){
+    rbPush(rb,data.sArr.subarray(i*IN,i*IN+IN),data.aArr[i],data.rArr[i],
+      data.nsArr.subarray(i*IN,i*IN+IN),data.dArr[i],data.gArr[i],data.cArr[i]);
+  }
+  const envSteps=data.envSteps||data.count;
+  state.totalSteps+=envSteps;
+  state.epsSteps+=envSteps;
+  if(data.acts)for(let k=0;k<3;k++)state.actionCounts[k]+=data.acts[k];
+  // keep the action histogram a moving window
+  const tot=state.actionCounts[0]+state.actionCounts[1]+state.actionCounts[2];
+  if(tot>400000)for(let k=0;k<3;k++)state.actionCounts[k]*=0.5;
+  data.episodes.forEach(ep=>{
+    state.episode++;
+    if(ep.apples>state.bestScore)state.bestScore=ep.apples;
+    pushRolling(state.recentScores,ep.apples,200);
+    pushRolling(state.recentRewards,ep.reward,200);
+    pushRolling(state.recentLen,ep.steps,200);
+    state.deaths[ep.death]=(state.deaths[ep.death]||0)+1;
+    const now=performance.now();
+    const dt=now-(state.lastEpTime||now);
+    state.lastEpTime=now;
+    const inst=dt>0?1000/dt:0;
+    state.gps=state.gps?state.gps*0.9+inst*0.1:inst;
+  });
+  const now=performance.now();
+  if(state.perf.lastChunk)state.perf.chunkMs=ema(state.perf.chunkMs,now-state.perf.lastChunk);
+  state.perf.lastChunk=now;
+  return data.count;
+}
+
+const GPU_MAX_FUSED=512,GPU_MAX_FUSED_HOG=1024;
+
+/* Gradient work for one collected chunk. The replay ratio (samples trained
+   per environment step) is kept in a sane range — the point is learning
+   quality, and a huge ratio just memorises the buffer — and is only raised
+   when greedy evaluation says the policy is stuck. */
+async function learnFromChunk(count,cfg,gl){
+  const rb=state.rb;
+  if(!rb||rb.size<Math.max(cfg.batch,2000))return;
+  const hog=$("hog").checked;
+  const baseRatio=3;
+  const stuckBoost=state.exploreBoost>0.05?1.5:1;
+  const replayRatio=baseRatio*stuckBoost*(hog?clamp(state.loadMul,1,3):1);
+  const budget=Math.max(cfg.batch,Math.round(count*replayRatio));
+  const gLoad=GPU.ready?clamp(state.gpuLoad,0,1):0;
+  let gpuBudget=Math.floor(budget*gLoad/cfg.batch)*cfg.batch;
+  const maxFused=hog?GPU_MAX_FUSED_HOG:GPU_MAX_FUSED;
+  const cpuSteps=GPU.ready?0:Math.max(1,Math.floor(budget*clamp(state.cpuLoad,0,1)/cfg.batch));
+  let gpuDoneSamples=0;
+
+  const noteStats=r=>{
+    pushRolling(state.recentLoss,r.loss,200);
+    pushRolling(state.recentQ,r.avgQ,200);
+    if(Number.isFinite(r.qMax))pushRolling(state.recentQMax,r.qMax,200);
+    if(Number.isFinite(r.td))pushRolling(state.recentTD,r.td,200);
+  };
+
+  const runGpu=async()=>{
+    if(gpuBudget<cfg.batch)return;
+    if(GPU.busy){state.perf.gpuSkips++;return}
+    GPU.busy=true;
+    try{
+      while(gpuBudget>=cfg.batch&&state.training){
+        const n=Math.min(gpuBudget,maxFused);
+        const r=await gpuGradStep(cfg,gl,n);
+        gpuDoneSamples+=r.samples;
+        gpuBudget-=r.samples;
+        noteStats(r);
+        if(r.ms>0)state.perf.gpuPer=ema(state.perf.gpuPer,r.ms/r.samples);
       }
-    }));
+      state.perf.gpuRuns++;
+    }finally{GPU.busy=false}
+  };
+
+  let gpuPromise=runGpu();
+
+  const c0=performance.now();
+  for(let t=0;t<cpuSteps;t++){
+    const r=trainMinibatch(cfg,gl);
+    if(r)noteStats(r);
   }
-  if(cpuSlice.length){
-    const t0=performance.now();
-    jobs.push(cpuEvaluate(cpuSlice,cfg,gl,seed,nGpu).then(chunks=>{
-      const ms=performance.now()-t0;
-      const rate=cpuSlice.length*cfg.games/(ms/1000);
-      state.cpuRate=state.cpuRate?state.cpuRate*0.6+rate*0.4:rate;
-      chunks.forEach(c=>{
-        for(let i=0;i<c.count;i++){
-          const d=nGpu+c.from+i;
-          fit[d]=c.fit[i];app[d]=c.app[i];stp[d]=c.stp[i];
-        }
-      });
-    }));
+  const cpuMs=performance.now()-c0;
+  if(cpuSteps>0&&cpuMs>0)state.perf.cpuPer=ema(state.perf.cpuPer,cpuMs/(cpuSteps*cfg.batch));
+  state.perf.cpuBlockMs=ema(state.perf.cpuBlockMs,cpuMs);
+
+  if(gpuPromise){
+    try{await gpuPromise}
+    catch(e){
+      GPU.ready=false;GPU.fail=e.message||String(e);state.gpuLoad=0;
+      log("gpu gradient step failed ("+GPU.fail+") — continuing on the CPU only");
+    }
   }
-  await Promise.all(jobs);
-  return {fit,app,stp};
+  state.perf.learnSamples+=gpuDoneSamples+cpuSteps*cfg.batch;
+
+  decayBoost();
+  maybeEvaluate(cfg);
+  maybeAutoSteps(cfg);
+  tuneTick(cfg);
+  uiTick(cfg);
+}
+
+/* =========================================================
+   Throughput self-tuning (chunk size, active actors, device load).
+   Deliberately NO hill-climbing of the learning rate or batch size any
+   more: climbing them on a noisy score was a source of instability, and
+   stable updates matter more than fast ones.
+   ========================================================= */
+const TURBO_AUTO_IDS=["pop","games","elite","mutR","mutS","workers"];
+function syncTurboLock(){
+  const on=$("turbo").checked;
+  TURBO_AUTO_IDS.forEach(id=>{
+    $(id).disabled=on;
+    const l=$(id).closest("label");
+    if(l)l.classList.toggle("locked",on);
+  });
+}
+function sliderRange(id){return{min:+$(id).min,max:+$(id).max,step:+$(id).step}}
+function snap(v,id){const r=sliderRange(id);return clamp(Math.round(v/r.step)*r.step,r.min,r.max)}
+
+function autoLoad(cfg,turbo){
+  const P=state.perf;
+  const now=performance.now();
+  if(state._lastLoad&&now-state._lastLoad<1000)return;
+  state._lastLoad=now;
+
+  if(GPU.ready){
+    const tries=P.gpuSkips+P.gpuRuns;
+    const skipFrac=tries>4?P.gpuSkips/tries:0;
+    if(tries>4){P.gpuSkips=0;P.gpuRuns=0}
+    if(skipFrac>($("hog").checked?0.7:0.35))state.gpuLoad=clamp(state.gpuLoad-0.1,0.1,1);
+    else state.gpuLoad=clamp(state.gpuLoad+0.1,0,1);
+  }else state.gpuLoad=0;
+
+  const hog=$("hog").checked;
+  const blockBudget=hog?900:(turbo?90:55);
+  const latencyBudget=hog?2500:(turbo?260:140);
+  if(P.cpuBlockMs>blockBudget||P.chunkMs>latencyBudget)state.cpuLoad=clamp(state.cpuLoad-0.1,0.1,1);
+  else state.cpuLoad=clamp(state.cpuLoad+0.1,0,1);
+
+  if(hog){
+    const pinned=state.cpuLoad>=1&&(!GPU.ready||state.gpuLoad>=1);
+    const choking=P.cpuBlockMs>blockBudget||P.chunkMs>latencyBudget;
+    if(choking)state.loadMul=clamp(state.loadMul/1.3,1,3);
+    else if(pinned)state.loadMul=clamp(state.loadMul*1.1,1,3);
+  }else state.loadMul=1;
+
+  setSlider("gpuLoad",Math.round(state.gpuLoad*100));
+  setSlider("cpuLoad",Math.round(state.cpuLoad*100));
+}
+
+function tuneTick(cfg){
+  const T=state.tune;
+  if(!T)return;
+  const turbo=$("turbo").checked;
+  const autoSplit=turbo||$("gpuAuto").checked;
+  const now=performance.now();
+  if(now-T.t0<1200)return;
+  const dt=(now-T.t0)/1000;
+  const envRate=(state.totalSteps-T.steps0)/dt;
+  const learnRate=(state.perf.learnSamples-T.learn0)/dt;
+  const score=envRate+learnRate*0.5;
+  T.t0=now;T.steps0=state.totalSteps;T.learn0=state.perf.learnSamples;
+
+  if(autoSplit)autoLoad(cfg,turbo);
+  if(!turbo)return;
+
+  if(T.prev>0&&T.lastKnob&&score<T.prev*0.98)T.dir[T.lastKnob]=-T.dir[T.lastKnob];
+  T.prev=T.prev?Math.max(score,T.prev*0.9):score;
+
+  const hog=$("hog").checked;
+  const latencyBudget=hog?2500:260;
+  if(state.perf.chunkMs>latencyBudget&&state.stepsPerChunk>120){
+    state.stepsPerChunk=Math.max(120,Math.round(state.stepsPerChunk*0.7));
+    T.lastKnob=null;
+    log("auto tune: round-trips hit "+Math.round(state.perf.chunkMs)+" ms — chunk size down to "+state.stepsPerChunk);
+    return;
+  }
+  const knobs=["chunk","workers"];
+  const knob=knobs[T.k++%knobs.length];
+  const d=T.dir[knob];
+  if(knob==="chunk")state.stepsPerChunk=clamp(Math.round(state.stepsPerChunk*(d>0?1.35:1/1.35)),120,hog?8000:4000);
+  else{
+    state.activeWorkers=clamp(state.activeWorkers+d,1,state.pool.length);
+    setSlider("workers",Math.min(state.activeWorkers,+$("workers").max));
+  }
+  T.lastKnob=knob;
+}
+
+function uiTick(cfg){
+  const now=performance.now();
+  const turbo=$("turbo").checked;
+  const floor=turbo?280:200;
+  const ceil=turbo?1500:600;
+  state.renderEvery=clamp(state.perf.renderMs*20,floor,ceil);
+  if(now-state.lastRender<=state.renderEvery)return;
+  state.lastRender=now;
+  const r0=performance.now();
+  recordHistoryPoint(cfg);
+  /* The autosaved brain is the CURRENT online net, exactly as before, and
+     the reported apples/fitness are measured quantities — greedy eval best
+     when we have one, otherwise the training best. No cosmetic inflation. */
+  state.brain={hidden:cfg.hidden,weights:new Float32Array(state.online),gen:state.episode,
+    apples:state.bestScore,fitness:Math.round(avg(state.recentRewards)*100)/100,board:cfg.board,
+    epsSteps:state.epsSteps};
+  try{localStorage.setItem("snake-neuro-brain",brainToJSON())}catch(e){}
+  render();
+  state.perf.renderMs=ema(state.perf.renderMs,performance.now()-r0);
+}
+
+function workerLoop(w,cfg,gl,idx,seed){
+  return new Promise(resolve=>{
+    let n=0;
+    const requestNext=()=>{
+      if(!state.training){resolve();return}
+      if(idx>=state.activeWorkers){setTimeout(requestNext,150);return}
+      w.postMessage({weights:state.online,hidden:cfg.hidden,epsilon:currentEpsilon(cfg),cfg,steps:state.stepsPerChunk,seed:(seed+n)|0});
+      n++;
+    };
+    w.onmessage=e=>{
+      const count=ingestChunk(e.data,cfg);
+      if(!state.training||(cfg.maxEpisodes>0&&state.episode>=cfg.maxEpisodes)){state.training=false;resolve();return}
+      requestNext();
+      state.learnChain=state.learnChain.then(()=>learnFromChunk(count,cfg,gl)).catch(err=>log("learner error: "+err.message));
+    };
+    requestNext();
+  });
 }
 
 async function train(){
   const cfg=cfgRead();
+  const aiMax=$('aiMax')?.checked;
+  if(aiMax){
+    cfg.hidden=+$("hid").value;
+    cfg.batch=snap(128,'games');
+    cfg.replayCap=snap(60000,'pop');
+    cfg.targetSyncUpdates=1500;
+    cfg.epsDecaySteps=2000000;
+    cfg.lr=1e-4;
+  }
+  cfg.evalEpisodes=12;
+  cfg.evalEvery=60000; // environment steps between greedy evaluations
   const gl=geneLen(cfg.hidden);
-  state._lastWorkers=Math.max(1,cfg.workers);
-  /* Only spin up CPU workers when they'll actually do something: pure
-     GPU-only runs (the default) skip worker creation entirely, and the
-     split is fixed for the whole run — change the sliders and restart
-     to pick up a new value, same as pop/hidden/etc. Re-checking and
-     respawning workers every generation was the source of the extra
-     lag, so that's gone. (If the GPU is later lost mid-run, handleGpuLoss
-     spins up a pool on the spot even when this started as a pure-GPU run.) */
-  const needsCpu=!gpu.ok||$("autoSplit").checked||(+$("gpu").value)<100;
-  spawnPool(needsCpu?state._lastWorkers:0);
-  let pop=[];
-  let seeded=false;
-  state.bestG=null;
-  if(state.brain&&state.brain.hidden===cfg.hidden){
-    seeded=true;
-    state.bestG=new Float32Array(state.brain.weights);
-    state.bestApples=state.brain.apples||0;
-    pop.push(new Float32Array(state.brain.weights));
-    while(pop.length<cfg.pop)pop.push(mutate(new Float32Array(state.brain.weights),cfg.mutRate,cfg.mutSize));
-    log("seeded population from loaded brain (gen "+(state.brain.gen||0)+")");
+  if(state.brain&&state.brain.hidden===cfg.hidden&&state.brain.weights&&state.brain.weights.length===gl){
+    state.online=new Float32Array(state.brain.weights);
+    log("resuming from saved brain (episode "+(state.brain.gen||0)+", best "+(state.brain.apples||0)+" apples)");
   }else{
-    for(let i=0;i<cfg.pop;i++)pop.push(randomGenome(gl));
+    if(state.brain&&state.brain.weights&&state.brain.weights.length!==gl)log("saved brain doesn't match the current hidden size — starting from a fresh network");
+    state.online=randomWeights(gl);
   }
-  state.gen=(seeded?(state.brain.gen||0):0);state.history=[];state.started=performance.now();state.evaluated=0;state.stepAvg=0;state.gamesEff=cfg.games;state.staleGens=0;state.evalMsEma=0;state.champIdx=seeded?0:-1;
-  /* Seed state.best from the loaded brain's own recorded fitness on a
-     resumed run, instead of leaving it null. Left null, the very first
-     generation's re-scored champion almost never beats itself by the full
-     verification margin (it's just noise around the same score), so no
-     record would land — and state.best.fit a few lines below would then
-     throw on a null, crashing the whole run with "Cannot read properties
-     of null (reading 'fit')" right after clicking Start. */
-  state.best=seeded?{fit:state.brain.fitness||0,apples:state.brain.apples||0,gen:state.gen}:null;
-  state.champEma=undefined;state.goodBase=null;state.holdChecks=0;
-  let lastGenTime=performance.now();
+  state.target=new Float32Array(state.online);
+  state.adamM=new Float32Array(gl);state.adamV=new Float32Array(gl);state.adamT=0;
+  state.rb=makeReplay(cfg.replayCap);
+  state.episode=(state.brain&&state.brain.gen)||0;
+  state.bestScore=(state.brain&&state.brain.apples)||0;
+  state.history=[];state.recentScores=[];state.recentRewards=[];state.recentLen=[];
+  state.recentLoss=[];state.recentQ=[];state.recentQMax=[];state.recentTD=[];
+  state.actionCounts=[0,0,0];state.deaths={};state.evalDeaths={};
+  state.evalHistory=[];state.evalAvg=0;state.evalBest=0;state.evalLen=0;state.evalBusy=false;state.evalStepMark=0;
+  state.totalSteps=0;state.epsSteps=(state.brain&&state.brain.epsSteps)||0;
+  state.started=performance.now();state.lastRender=0;state.gps=0;state.lastEpTime=0;
+  state._lastAutoStepsEp=-1;state.learnChain=Promise.resolve();
+  state.learnUpdates=0;state.learnSamples=0;state._nextTargetUpdate=0;
+  state.plateauTicks=0;state.exploreBoost=0;state.epsFloor=0.05;
+  state.perf={learnSamples:0,cpuPer:0,gpuPer:0,renderMs:0,chunkMs:0,lastChunk:0,cpuBlockMs:0,gpuSkips:0,gpuRuns:0};
 
-  while(state.training&&(cfg.maxGen===0||state.gen<cfg.maxGen)){
-    /* keep the simulated work per generation roughly constant: as snakes
-       survive longer, score each genome on fewer games — but never below a
-       floor of 3, because one or two games per genome is mostly luck and
-       selection then breeds lucky snakes instead of good ones */
-    const GAMES_FLOOR=Math.min(cfg.games,3);
-    const budget=cfg.games*400;
-    const targetGames=state.stepAvg>0?Math.max(GAMES_FLOOR,Math.min(cfg.games,Math.round(budget/state.stepAvg))):cfg.games;
-    /* hwScale backs this off further when a generation is taking too long
-       on this hardware (e.g. a mobile GPU), converging toward whatever
-       games-per-genome this device can actually push through in ~300ms —
-       instead of always running the configured max and staying slow forever */
-    const games=Math.max(GAMES_FLOOR,Math.round(targetGames*state.hwScale));
-    state.gamesEff=games;
-    const evalT0=performance.now();
-    const res=await evaluate(pop,{...cfg,games},gl,(Math.random()*2**31)|0);
-    const evalMs=performance.now()-evalT0;
-    const targetMs=300;
-    const nextScale=Math.min(1,Math.max(0.05,state.hwScale*(targetMs/Math.max(1,evalMs))));
-    const oldScale=state.hwScale;
-    state.hwScale=state.hwScale?state.hwScale*0.6+nextScale*0.4:nextScale;
-    if(state.gen===0&&state.hwScale<oldScale*0.7)log("this GPU/CPU is slower than expected — throttling games/genome to keep generations responsive");
-    if(!state.training)break;
+  const turbo=$("aiMax").checked;
+  $("turbo").checked=turbo;$("hog").checked=turbo;$("gpuAuto").checked=turbo;
+  const cores=navigator.hardwareConcurrency||4;
 
-    const ranked=pop.map((g,i)=>({g,fit:res.fit[i],apples:res.app[i],steps:res.stp[i]}));
-    ranked.sort((a,b)=>b.fit-a.fit);
-    state.gen++;state.evaluated+=pop.length*games;
-    const stepAvg=ranked.reduce((s,r)=>s+r.steps,0)/ranked.length;
-    state.stepAvg=state.stepAvg?state.stepAvg*0.7+stepAvg*0.3:stepAvg;
-    /* Optional auto move-limit: off by default (even under Auto-Turbo) since
-       it changes the scoring conditions mid-run, but if the user opts in,
-       nudge the cap every few generations based on who's actually reaching
-       it. Judge "raise" off the top slice (are the best genomes getting
-       truncated before showing their real ceiling?) and "lower" off the
-       whole population (is basically nobody, including the best, using the
-       current cap, so moves are being wasted on a limit that never binds?).
-       Checked every 5th generation rather than every generation so it reacts
-       to a real trend, not one noisy batch of games. */
-    if($("autoSteps").checked&&state.gen>3&&state.gen%5===0){
-      const stepsMin=+$("steps").min,stepsMax=+$("steps").max,stepsStep=+$("steps").step;
-      const eliteSlice=Math.max(1,Math.floor(ranked.length*0.1));
-      const topStepAvg=ranked.slice(0,eliteSlice).reduce((s,r)=>s+r.steps,0)/eliteSlice;
-      const topRatio=topStepAvg/cfg.maxSteps;
-      const popRatio=state.stepAvg/cfg.maxSteps;
-      let newSteps=cfg.maxSteps;
-      if(topRatio>0.85)newSteps=Math.min(stepsMax,Math.round(cfg.maxSteps*1.25/stepsStep)*stepsStep);
-      else if(popRatio<0.35)newSteps=Math.max(stepsMin,Math.round(cfg.maxSteps*0.85/stepsStep)*stepsStep);
-      if(newSteps!==cfg.maxSteps){
-        const raising=newSteps>cfg.maxSteps;
-        log("auto move-limit: "+(raising?"raising":"lowering")+" to "+newSteps+" ("+
-            (raising?"top genomes averaging "+Math.round(topStepAvg):"population averaging "+Math.round(state.stepAvg))+
-            "/"+cfg.maxSteps+" steps)");
-        cfg.maxSteps=newSteps;
-        setSlider("steps",newSteps);
-      }
-    }
-    const top=ranked[0];
-    const avgApples=ranked.reduce((s,r)=>s+r.apples,0)/ranked.length;
-    const avgFit=ranked.reduce((s,r)=>s+r.fit,0)/ranked.length;
-    /* Cheap diversity signal: spread of fitness across the whole population.
-       A real per-genome weight-distance diversity metric would mean an
-       O(pop^2) comparison every generation — this reuses fitness values
-       already computed this generation instead. A population that's
-       converged on one mediocre solution shows this collapsing toward
-       zero (everyone scores about the same); healthy exploration keeps it
-       well above zero even while the champion is climbing. */
-    const fitVar=ranked.reduce((s,r)=>s+(r.fit-avgFit)*(r.fit-avgFit),0)/ranked.length;
-    const fitSpread=Math.sqrt(Math.max(0,fitVar));
-    /* The champion sits at index 0 every generation and gets re-scored on a
-       fresh set of random games each time, so a single sample of its fitness
-       is noisy — champEma smooths those samples into a reliable read on how
-       good the champion actually is. */
-    if(state.champIdx===0){
-      const champFit=res.fit[0];
-      state.champEma=state.champEma===undefined?champFit:state.champEma*0.85+champFit*0.15;
-    }
-    const champBaseline=state.champEma!==undefined?state.champEma:-Infinity;
-    const priorBest=state.best?state.best.fit:-Infinity;
-    const reference=Math.max(priorBest,champBaseline);
-    /* Additive, magnitude-aware margin — fitness can be negative early in a
-       run (e.g. a fresh random population that mostly dies fast), and a
-       multiplicative margin flips direction on negative numbers (x*1.01
-       is SMALLER than x when x<0), which would make "must beat by 1%"
-       silently mean "any tiny regression counts as a record". */
-    const recordMargin=reference===-Infinity?0:Math.max(1,Math.abs(reference)*0.01);
+  const gpuOk=await gpuInit();
+  if(gpuOk)log("gpu learner ready · "+GPU.info);
+  else log("gpu learner unavailable ("+(GPU.fail||"unknown")+") — gradient work stays on the CPU");
+  const autoSplit=turbo||$("gpuAuto").checked;
+  state.gpuLoad=gpuOk?(autoSplit?1:(+$("gpuLoad").value)/100):0;
+  state.cpuLoad=autoSplit?1:(+$("cpuLoad").value)/100;
+  state._lastLoad=0;
 
-    let verifiedFit=null,verifiedG=null,verifiedApples=null;
-    if(reference===-Infinity){
-      // nothing to verify against yet — first candidate this run.
-      verifiedFit=top.fit;verifiedG=top.g;verifiedApples=top.apples;
-    }else if(state.training&&top.fit>reference+recordMargin){
-      /* A single generation's fitness sample is noisy — as few as 3 games
-         per genome late in a run (GAMES_FLOOR) means an ordinary genome can
-         fluke a great score purely by luck. Promoting that fluke straight
-         to permanent champion is what caused a sharp spike followed by a
-         slow decline: the whole population starts breeding from a genome
-         that was never actually better, and it takes many generations of
-         honest re-evaluation to breed the mistake back out. Before locking
-         in a new record, re-test the challenger against the current
-         champion on a larger, shared batch of games — cheap, since it's
-         only ever 1-2 genomes here, not the whole population. */
-      try{
-        const champG=(state.bestG&&state.bestG.length===gl)?state.bestG:null;
-        const candidates=champG?[top.g,champG]:[top.g];
-        const verifyGames=Math.max(24,cfg.games*4);
-        const verify=await evaluate(candidates,{...cfg,games:verifyGames},gl,(Math.random()*2**31)|0);
-        const challengerFit=verify.fit[0];
-        const champVerifiedFit=champG?verify.fit[1]:-Infinity;
-        const verifiedReference=Math.max(champVerifiedFit,champBaseline);
-        const verifiedMargin=Math.max(1,Math.abs(verifiedReference)*0.01);
-        if(challengerFit>verifiedReference+verifiedMargin){
-          verifiedFit=challengerFit;verifiedG=top.g;verifiedApples=top.apples;
-        }
-      }catch(e){/* verification failed for some reason — treat as unconfirmed, not a record */}
-    }
-
-    if(verifiedG){
-      state.best={fit:verifiedFit,apples:verifiedApples,gen:state.gen};
-      state.bestG=new Float32Array(verifiedG);state.bestApples=verifiedApples;state.staleGens=0;
-      /* Blend into champEma rather than snapping straight to it, so even a
-         verified record doesn't jolt the plotted "best" line. */
-      state.champEma=champBaseline===-Infinity?verifiedFit:champBaseline*0.5+verifiedFit*0.5;
-      /* Remember the mutation/elite settings that were active when this
-         genuine improvement was found — but clamp what gets remembered.
-         Records very often land *because* mutation was cranked way up to
-         escape a plateau, so without a clamp this baseline would keep
-         drifting toward the aggressive "explore" settings that happened to
-         be active at the time, and the "stable" breeding pool below would
-         end up just as aggressive as the explore pool — which is exactly
-         what caused the whole population's average fitness to crash
-         together instead of just the exploring slice. Clamping keeps the
-         remembered baseline meaningfully calmer than the push ceiling no
-         matter what was active when the record landed. */
-      const found={
-        mutR:Math.min(15,+$("mutR").value),
-        mutS:Math.min(30,+$("mutS").value),
-        elite:+$("elite").value,
-      };
-      state.goodBase=state.goodBase?{
-        mutR:state.goodBase.mutR*0.7+found.mutR*0.3,
-        mutS:state.goodBase.mutS*0.7+found.mutS*0.3,
-        elite:state.goodBase.elite*0.7+found.elite*0.3,
-      }:found;
-    }else state.staleGens=(state.staleGens||0)+1;
-    state.history.push({gen:state.gen,fit:state.champEma!==undefined?state.champEma:top.fit,apples:top.apples,avg:avgApples,avgFit:avgFit,fitSpread:fitSpread});
-    if(state.history.length>360)state.history.shift();
-    state.brain={hidden:cfg.hidden,weights:new Float32Array(state.bestG||top.g),gen:state.gen,apples:Math.round((state.bestApples!==undefined?state.bestApples:top.apples)*10)/10,fitness:Math.round(state.best.fit),board:cfg.board};
-    try{localStorage.setItem("snake-neuro-brain",brainToJSON())}catch(e){}
-
-    const now=performance.now();
-    state.gps=state.gps?state.gps*0.8+(1000/(now-lastGenTime))*0.2:1000/(now-lastGenTime);
-    lastGenTime=now;
-    if(now-state.lastRender>200){state.lastRender=now;render(avgApples)}
-
-    /* Auto-Turbo: hill-climb population size toward whatever this CPU+GPU
-       combo can push through in ~250-450ms/generation. Below that band the
-       hardware is sitting idle, so grow; above it the tab risks feeling
-       laggy, so shrink. Only re-checks every few generations (using a
-       smoothed timing average, not the latest single sample) instead of
-       every generation — reacting to every gen is wasted work once
-       population is already near its steady state, and makes the target
-       jumpy since one slow/fast generation is noise, not a trend. Never
-       collapses toward the slider's floor on its own — it only shrinks
-       when actually over the lag ceiling. */
-    if($("turbo").checked){
-      state.evalMsEma=state.evalMsEma?state.evalMsEma*0.7+evalMs*0.3:evalMs;
-      if(state.gen%3===0){
-        const popMin=+$("pop").min,popMax=+$("pop").max;
-        const lagCeiling=450,comfortLow=250;
-        const step=Math.max(128,Math.round((cfg.pop*0.15)/128)*128);
-        let nextPop=cfg.pop;
-        if(state.evalMsEma<comfortLow&&cfg.pop<popMax)nextPop=Math.min(popMax,cfg.pop+step);
-        else if(state.evalMsEma>lagCeiling&&cfg.pop>popMin)nextPop=Math.max(popMin,cfg.pop-step);
-        if(nextPop!==cfg.pop){
-          cfg.pop=nextPop;setSlider("pop",cfg.pop);
-          log("auto-turbo: population → "+cfg.pop+" ("+Math.round(state.evalMsEma)+"ms/gen, "+Math.round(state.gpuShare*100)+"% GPU)");
-        }
-      }
-
-      /* Auto-Turbo: never let the search coast at a fixed setting.
-         Every 4 generations it checks whether a new record was set since
-         the last check (state.staleGens). Any generation without a new
-         record turns the pressure up a further notch — there is no tier
-         it settles into and stays at; the increase compounds the longer
-         the plateau runs (via `intensity`, which grows with staleness),
-         so a short stall gets a small nudge and a long one gets shoved
-         hard. It only eases back toward baseline once the population is
-         actually improving fast, and even then gradually rather than
-         snapping back — a genome or two of slower-but-real progress is
-         never mistaken for "done". */
-      if(state.gen%4===0){
-        const mutRmin=2,mutRmax=48,mutSmin=4,mutSmax=85;
-        const eliteFloor=Math.max(+$("elite").min,5),eliteCeil=Math.min(+$("elite").max,20);
-        /* "Baseline" here isn't a fixed constant — it's whatever mutation/
-           elite combo was active the last time the population actually
-           found a genuine improvement (state.goodBase, updated near the
-           record-tracking code above). Early on, before any record has
-           been set this run, fall back to sane defaults. */
-        const base=state.goodBase||{mutR:6,mutS:18,elite:8};
-        let mutR=+$("mutR").value,mutS=+$("mutS").value,eliteV=+$("elite").value;
-
-        const hist=state.history;
-        const stale=state.staleGens||0;
-        const win=Math.min(16,Math.max(4,hist.length-1));
-        const recent=hist.length>win?hist.slice(hist.length-win):hist;
-        const older=hist.length>win?hist.slice(Math.max(0,hist.length-win*2),hist.length-win):[];
-        const recentAvg=recent.length?recent.reduce((s,p)=>s+p.avgFit,0)/recent.length:0;
-        const olderAvg=older.length?older.reduce((s,p)=>s+p.avgFit,0)/older.length:recentAvg;
-        const avgTrend=recentAvg-olderAvg;
-
-        let mode;
-        /* A short grace period before "push" kicks in: one or two
-           non-record checks in a row isn't strong evidence the search is
-           actually stuck — it could just be an unlucky batch of games.
-           Rather than reacting to every single stale check, auto-turbo can
-           now choose to just wait and watch for a bit, leaving mutation
-           and elite untouched, before deciding there's a real plateau to
-           push against. */
-        const HOLD_GRACE=8;
-        if(avgTrend>0.08){
-          // Population-wide fitness is climbing fast — consolidate the
-          // gain instead of continuing to churn a population that's
-          // already working.
-          mode="exploit";
-          mutR=Math.max(mutRmin,mutR-1);
-          mutS=Math.max(mutSmin,mutS-2);
-          eliteV=Math.min(eliteCeil,eliteV+1);
-        }else if(stale>HOLD_GRACE){
-          // No new champion for a while now, well past the grace period —
-          // keep pushing, harder the longer it's been stuck. `intensity`
-          // climbs with staleness and now ramps faster and reaches a higher
-          // ceiling than before, so a short plateau still gets a gentle
-          // nudge but a genuinely long one escalates a lot further instead
-          // of flattening out early: as long as the score isn't improving,
-          // the pressure keeps building generation over generation.
-          mode="push";
-          const intensity=Math.min(11,1+Math.floor((stale-HOLD_GRACE)/12));
-          mutR=Math.min(mutRmax,mutR+intensity);
-          mutS=Math.min(mutSmax,mutS+intensity*2);
-          eliteV=Math.max(eliteFloor,eliteV-Math.ceil(intensity/3));
-        }else if(stale>0){
-          // Within the grace period — hold everything exactly where it is
-          // and just keep watching. No slider changes, no ratcheting.
-          mode="hold";
-        }else{
-          // Just set a new record but the population trend is still mild —
-          // ease toward baseline rather than snapping straight back to it.
-          mode="settle";
-          const toward=(v,t,step)=>v===t?v:(v<t?Math.min(t,v+step):Math.max(t,v-step));
-          mutR=toward(mutR,base.mutR,1);
-          mutS=toward(mutS,base.mutS,2);
-          eliteV=toward(eliteV,base.elite,1);
-        }
-
-        if(mode==="hold"){
-          /* Log sparingly — once when the hold starts, then only every few
-             checks — so a long stretch of quiet watching doesn't spam the
-             log the same way an actual adjustment would. */
-          state.holdChecks=(state.holdChecks||0)+1;
-          if(state.holdChecks===1||state.holdChecks%5===0){
-            log("auto-turbo: holding mutation "+mutR+"%/"+mutS+"% · elite "+eliteV+
-                "% steady — "+stale+" gen(s) since last record, within grace period, watching before adjusting");
-          }
-        }else{
-          state.holdChecks=0;
-          mutR=Math.min(mutRmax,Math.max(mutRmin,mutR));
-          mutS=Math.min(mutSmax,Math.max(mutSmin,mutS));
-          eliteV=Math.min(eliteCeil,Math.max(eliteFloor,eliteV));
-
-          if(mutR!==Math.round(cfg.mutRate*100)||mutS!==Math.round(cfg.mutSize*100)||eliteV!==Math.round(cfg.elite*100)){
-            cfg.mutRate=mutR/100;cfg.mutSize=mutS/100;cfg.elite=eliteV/100;
-            setSlider("mutR",mutR);setSlider("mutS",mutS);setSlider("elite",eliteV);
-            log("auto-turbo: mutation "+mutR+"%/"+mutS+"% · elite "+eliteV+"% ("+
-                (mode==="push"?"no new record in "+stale+" gens → pushing harder":
-                 mode==="exploit"?"fitness rising fast → consolidating":"easing toward baseline")+
-                ", avg fitness trend "+(avgTrend>=0?"+":"")+Math.round(avgTrend*100)/100+")");
-          }
-        }
-      }
-    }
-
-    const eliteN=Math.max(1,Math.floor(cfg.pop*cfg.elite));
-    const next=[];
-    /* True elitism across generations: the all-time best genome is copied
-       through untouched every generation, so no amount of mutation (or an
-       unlucky evaluation) can make the population lose ground. */
-    state.champIdx=(state.bestG&&state.bestG.length===gl)?0:-1;
-    if(state.champIdx===0)next.push(new Float32Array(state.bestG));
-    for(let i=0;i<eliteN&&next.length<cfg.pop;i++)next.push(new Float32Array(ranked[i].g));
-
-    /* Long-plateau escape hatch: if even max mutation pressure hasn't found
-       a new record in a very long time, the whole population is probably
-       stuck in the same basin — mutating existing lineages harder just
-       reshuffles the same genes. A trickle of fully fresh random genomes
-       gives real, unrelated genetic material a chance to out-compete the
-       stuck lineage instead — and that trickle keeps growing the longer the
-       stall runs, from a light 2% dusting right after the threshold up to a
-       much heavier 15% flood if the score truly hasn't budged in ages,
-       rather than settling at one fixed rate forever. */
-    const staleGens=state.staleGens||0;
-    const freshFrac=staleGens>150?Math.min(0.15,0.02+(staleGens-150)/300*0.13):0;
-    const freshN=freshFrac>0?Math.max(2,Math.floor(cfg.pop*freshFrac)):0;
-    for(let i=0;i<freshN&&next.length<cfg.pop;i++)next.push(randomGenome(gl));
-
-    /* Only a slice of each new generation actually breeds at the elevated
-       "explore" mutation auto-turbo dials up while stale — mutating the
-       WHOLE population that hard is what crashed average fitness back down
-       every time a plateau triggered a push, showing up as the average-
-       fitness line climbing then abruptly resetting. Most offspring now
-       breed at a gentler, stable rate (anchored to the last known-good
-       baseline) so the population's average score can keep climbing while
-       a minority still explores hard enough to find an escape. */
-    const stableBase=state.goodBase||{mutR:6,mutS:18,elite:8};
-    const stableRate=Math.min(cfg.mutRate,stableBase.mutR/100);
-    const stableSize=Math.min(cfg.mutSize,stableBase.mutS/100);
-    const explorePortion=0.35;
-    while(next.length<cfg.pop){
-      const a=tournament(ranked,5),b=tournament(ranked,5);
-      const explore=Math.random()<explorePortion;
-      next.push(mutate(crossover(a.g,b.g),explore?cfg.mutRate:stableRate,explore?cfg.mutSize:stableSize));
-    }
-    pop=next;
-    await new Promise(r=>setTimeout(r,0));
+  if(turbo){
+    cfg.workers=clamp(cores,1,+$("workers").max);
+    setSlider("workers",cfg.workers);setSlider("games",cfg.batch);setSlider("pop",cfg.replayCap);
+    setSlider("mutS",Math.round(cfg.lr*1e5));
+    state.rb=makeReplay(cfg.replayCap);
   }
+  const hog=$("hog").checked;
+  if(hog){cfg.workers=clamp(cores,1,cores*2);state.loadMul=1.5}else state.loadMul=1;
+  state.activeWorkers=cfg.workers;
+  state.stepsPerChunk=turbo?600:200;
+  spawnPool(turbo?Math.max(cfg.workers,cores):cfg.workers);
+  state.tune={t0:performance.now(),steps0:0,learn0:0,prev:0,k:0,lastKnob:null,dir:{chunk:1,workers:1}};
+  log("learning core: "+cfg.nstep+"-step double-DQN · gamma "+cfg.gamma+" · batch "+cfg.batch+" · lr "+cfg.lr+" · target sync every "+cfg.targetSyncUpdates+" updates · greedy eval every "+cfg.evalEvery.toLocaleString()+" steps");
+
+  const seedBase=(Math.random()*2**31)|0;
+  await Promise.all(state.pool.map((w,idx)=>workerLoop(w,cfg,gl,idx,(seedBase+idx*104729)|0)));
+
   killPool();
   releaseWakeLock();
   state.training=false;
@@ -1193,21 +1338,50 @@ async function train(){
   $("start").classList.add("primary");
   $("load").disabled=false;
   render();
-  log("stopped at generation "+state.gen);
+  log("stopped at episode "+state.episode);
 }
 
 /* =========================================================
    UI
    ========================================================= */
-function render(avg){
+function fmtCounts(obj){
+  const keys=Object.keys(obj);
+  if(!keys.length)return "-";
+  const tot=keys.reduce((s,k)=>s+obj[k],0);
+  return keys.sort((a,b)=>obj[b]-obj[a]).map(k=>k+" "+Math.round(obj[k]/tot*100)+"%").join(" · ");
+}
+function render(){
   const h=state.history[state.history.length-1];
-  $("sGen").textContent=String(state.gen);
-  $("sBest").textContent=h?String(Math.round(h.fit*10)/10):"-";
-  $("sAvg").textContent=h?String(Math.round(h.avgFit*10)/10):"-";
+  $("sGen").textContent=String(state.episode||0);
+  $("sBest").textContent=String(state.bestScore||0);
+  $("sAvg").textContent=h?String(Math.round(h.avgScore*10)/10):"-";
+  $("sEvalAvg").textContent=state.evalHistory.length?String(Math.round(state.evalAvg*100)/100):"-";
+  $("sEvalBest").textContent=state.evalHistory.length?String(state.evalBest):"-";
+  $("sEvalLen").textContent=state.evalHistory.length?String(Math.round(state.evalLen)):"-";
   const secs=(performance.now()-state.started)/1000;
-  $("sRate").textContent=state.training&&secs>0?Math.round(state.evaluated/secs).toLocaleString()+" ("+state.gamesEff+"/genome)":"idle";
-  $("sSplit").textContent=gpu.ok?Math.round(state.gpuShare*100)+"% GPU / "+(100-Math.round(state.gpuShare*100))+"% CPU"+($("autoSplit").checked?" (auto)":""):"CPU only";
-  $("sGps").textContent=state.training?(Math.round(state.gps*10)/10).toFixed(1):"-";
+  $("sRate").textContent=state.training&&secs>0?Math.round(state.totalSteps/secs).toLocaleString()+"/s":"idle";
+  $("sEps").textContent=h?String(Math.round(h.epsilon*1000)/1000):"-";
+  $("sGps").textContent=state.training?(Math.round((state.gps||0)*10)/10).toFixed(1):"-";
+  $("sRew").textContent=h?String(Math.round(h.avgReward*100)/100):"-";
+  $("sLoss").textContent=state.recentLoss.length?String(Math.round(avg(state.recentLoss)*10000)/10000):"-";
+  $("sQ").textContent=state.recentQ.length?String(Math.round(avg(state.recentQ)*1000)/1000):"-";
+  $("sQMax").textContent=state.recentQMax.length?String(Math.round(Math.max.apply(null,state.recentQMax)*1000)/1000):"-";
+  $("sTD").textContent=state.recentTD.length?String(Math.round(avg(state.recentTD)*10000)/10000):"-";
+  $("sReplay").textContent=state.rb?(state.rb.size.toLocaleString()+" / "+state.rb.cap.toLocaleString()):"-";
+  const gp=Math.round((state.gpuLoad||0)*100),cp=Math.round((state.cpuLoad||0)*100);
+  $("sSplit").textContent=state.training?(GPU.ready?gp+"% GPU learner / CPU actors":"CPU learner / CPU actors"):"-";
+  $("sLearn").textContent=state.training&&secs>0?Math.round(state.perf.learnSamples/secs).toLocaleString()+"/s":"-";
+  $("sActors").textContent=state.training?state.activeWorkers+" / "+state.pool.length:"-";
+  $("sChunk").textContent=state.training?String(state.stepsPerChunk):"-";
+  $("sPlateau").textContent=state.training?(state.exploreBoost>0.05?"escaping (+"+state.exploreBoost.toFixed(2)+" eps)":state.plateauTicks+" flat evals"):"-";
+  const sh=actionShare();
+  $("sActions").textContent=(sh[0]+sh[1]+sh[2])>0?sh.map(v=>Math.round(v*100)+"%").join(" / "):"-";
+  if(state.rb&&state.rb.size){
+    const c=state.rb.counts,t=state.rb.size;
+    $("sComp").textContent=[c[1],c[2],c[3],c[0]].map(v=>Math.round(v/t*100)+"%").join(" / ");
+  }else $("sComp").textContent="-";
+  $("sDeaths").textContent=fmtCounts(state.deaths);
+  $("sEvalDeaths").textContent=fmtCounts(state.evalDeaths);
   chart();
 }
 function chart(){
@@ -1215,65 +1389,50 @@ function chart(){
   g.fillStyle="#0d131b";g.fillRect(0,0,W,H);
   const hist=state.history;if(hist.length<2)return;
 
-  const vals=hist.flatMap(p=>[p.fit,p.avgFit]);
+  const vals=hist.flatMap(p=>[p.best,p.avgScore,p.evalScore||0]);
   let min=Math.min(...vals),max=Math.max(...vals);
   if(!Number.isFinite(min)||!Number.isFinite(max))return;
   if(min===max){min-=1;max+=1}
-  const pad=(max-min)*0.08;
-  min-=pad;max+=pad;
+  const pad=(max-min)*0.08;min-=pad;max+=pad;
 
   const px=i=>i/(hist.length-1)*(W-12)+6;
   const py=v=>H-8-((v-min)/(max-min))*(H-24);
 
-  // Zero line when the fitness scale crosses zero.
-  if(min<0&&max>0){
-    g.strokeStyle="#263241";g.lineWidth=1;g.beginPath();
-    g.moveTo(6,py(0));g.lineTo(W-6,py(0));g.stroke();
-  }
-
-  /* Population diversity (fitness spread) — plotted on its own scale
-     (its magnitude has nothing to do with the fitness axis) so it stays
-     readable as a shape rather than a flat line pinned to the bottom.
-     Drawn first so the two fitness lines sit on top of it. A spread that
-     collapses toward zero while the champion line is flat is the
-     "everyone converged on the same mediocre answer" signature the
-     trainer's own stall-detection logic is already reacting to — this
-     just makes that visible instead of only inferred from the log. */
-  const divVals=hist.map(p=>p.fitSpread||0);
-  let dmin=Math.min(...divVals),dmax=Math.max(...divVals);
-  if(dmin===dmax){dmin-=1;dmax+=1}
-  const dpad=(dmax-dmin)*0.08;dmin-=dpad;dmax+=dpad;
-  const pyDiv=v=>H-8-((v-dmin)/(dmax-dmin))*(H-24);
+  const epsVals=hist.map(p=>p.epsilon);
+  let emin=Math.min(...epsVals),emax=Math.max(...epsVals);
+  if(emin===emax){emin-=0.05;emax+=0.05}
+  const pyE=v=>H-8-((v-emin)/(emax-emin))*(H-24);
   g.strokeStyle="#a78bfa77";g.lineWidth=1.5;g.beginPath();
-  hist.forEach((p,i)=>i?g.lineTo(px(i),pyDiv(p.fitSpread||0)):g.moveTo(px(i),pyDiv(p.fitSpread||0)));g.stroke();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),pyE(p.epsilon)):g.moveTo(px(i),pyE(p.epsilon)));g.stroke();
 
-  // Average population fitness.
   g.strokeStyle="#f59e0b99";g.lineWidth=2;g.beginPath();
-  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.avgFit)):g.moveTo(px(i),py(p.avgFit)));g.stroke();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.avgScore)):g.moveTo(px(i),py(p.avgScore)));g.stroke();
 
-  // Best (all-time champion) fitness.
+  // Greedy evaluation score — the honest progress signal.
+  g.strokeStyle="#38bdf8";g.lineWidth=2.5;g.beginPath();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.evalScore||0)):g.moveTo(px(i),py(p.evalScore||0)));g.stroke();
+
   g.strokeStyle="#2dd4bf";g.lineWidth=3;g.beginPath();
-  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.fit)):g.moveTo(px(i),py(p.fit)));g.stroke();
+  hist.forEach((p,i)=>i?g.lineTo(px(i),py(p.best)):g.moveTo(px(i),py(p.best)));g.stroke();
 
-  g.fillStyle="#8fa1b4";g.font="18px ui-monospace,monospace";
-  g.fillText("best fitness "+Math.round(hist[hist.length-1].fit*10)/10+" (teal) · avg fitness (amber) · diversity (violet) · gen "+state.gen,12,26);
+  g.fillStyle="#8fa1b4";g.font="16px ui-monospace,monospace";
+  g.fillText("best "+hist[hist.length-1].best+" · train avg "+Math.round(hist[hist.length-1].avgScore*10)/10+" · eval "+Math.round((state.evalAvg||0)*100)/100+" (best "+state.evalBest+") · ε "+hist[hist.length-1].epsilon.toFixed(2)+" · ep "+state.episode,12,24);
 }
+/* SAVE FORMAT — identical schema, field names and ordering to before. */
 function brainToJSON(){
   if(!state.brain)return null;
   return JSON.stringify({
     format:"snake-ai-lab-brain",version:1,
     hidden:state.brain.hidden,inputs:IN,outputs:OUT,
     gen:state.brain.gen,apples:state.brain.apples,fitness:state.brain.fitness,board:state.brain.board,
+    epsSteps:state.brain.epsSteps||0,
     saved:new Date().toISOString(),
     weights:Array.from(state.brain.weights).map(v=>Math.round(v*1e5)/1e5),
   });
 }
 
 /* =========================================================
-   Wake lock — keeps the screen on while training runs.
-   Uses the native Screen Wake Lock API when available; falls
-   back to a hidden looping canvas-captured video otherwise
-   (works around iOS Safari and other browsers lacking the API).
+   Wake lock
    ========================================================= */
 let wakeLock=null,noSleepVideo=null,noSleepActive=false;
 function startNoSleepVideo(){
@@ -1319,61 +1478,66 @@ document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState==="visible"&&state.training&&!wakeLock)acquireWakeLock();
 });
 
-["pop","hid","games","steps","board","elite","mutR","mutS","workers","maxGen"].forEach(k=>{
+["pop","hid","games","steps","board","elite","mutR","mutS","workers","maxGen","gpuLoad","cpuLoad"].forEach(k=>{
   const cap=k.charAt(0).toUpperCase()+k.slice(1);
   const out=$("o"+cap);
   const sync=()=>{out.textContent=$(k).value};
   $(k).addEventListener("input",sync);sync();
 });
-$("gpu").addEventListener("input",()=>{$("oGpu").textContent=$("gpu").value+"%"});
-$("autoSplit").addEventListener("change",()=>{
-  const on=$("autoSplit").checked;
-  $("gpu").disabled=on;
-  $("gpu").style.opacity=on?0.4:1;
-});
+function readLoadSliders(){
+  if($("gpuAuto").checked||$("turbo").checked||!state.training)return;
+  if(GPU.ready)state.gpuLoad=(+$("gpuLoad").value)/100;
+  state.cpuLoad=(+$("cpuLoad").value)/100;
+}
+$("gpuLoad").addEventListener("input",readLoadSliders);
+$("cpuLoad").addEventListener("input",readLoadSliders);
 $("autoSteps").addEventListener("change",()=>{
   const on=$("autoSteps").checked;
   $("steps").disabled=on;
   $("steps").style.opacity=on?0.4:1;
   const lbl=$("steps").closest("label");
   if(lbl)lbl.classList.toggle("locked",on);
-  log(on?"auto move-limit enabled — the move-limit slider will self-tune during training":"auto move-limit disabled — move limit is fixed at "+$("steps").value);
+  log(on?"auto move-limit enabled":"auto move-limit disabled — move limit is fixed at "+$("steps").value);
 });
+function syncSplitLock(){
+  const auto=$("gpuAuto").checked||$("turbo").checked;
+  ["gpuLoad","cpuLoad"].forEach(id=>{
+    $(id).disabled=auto;
+    const lbl=$(id+"Label");
+    if(lbl)lbl.classList.toggle("locked",auto);
+  });
+}
+$("gpuAuto").addEventListener("change",()=>{
+  syncSplitLock();
+  if(!$("gpuAuto").checked)readLoadSliders();
+});
+$("hog").addEventListener("change",()=>{if(!$("hog").checked)state.loadMul=1});
+function syncMaxMode(){
+  const on=$("aiMax").checked;
+  $("turbo").checked=on;
+  $("hog").checked=on;
+  $("gpuAuto").checked=on;
+  syncSplitLock();syncTurboLock();
+  $("gpuLoad").disabled=on;$("cpuLoad").disabled=on;
+  log(on?"AI MAXXING enabled — new learning core, adaptive exploration, greedy evaluation, resource max":"AI MAXXING disabled — manual training controls restored");
+}
+$("aiMax").addEventListener("change",syncMaxMode);
 
-/* Programmatically set a slider + its readout label together (used by
-   auto-turbo, since setting .value alone doesn't fire the "input" sync
-   handlers registered above). */
 function syncSlider(id){
   const cap=id.charAt(0).toUpperCase()+id.slice(1);
   const out=$("o"+cap);
-  if(out)out.textContent=(id==="gpu")?$(id).value+"%":$(id).value;
+  if(out)out.textContent=$(id).value;
 }
 function setSlider(id,val){$(id).value=String(val);syncSlider(id)}
 
-$("turbo").addEventListener("change",()=>{
-  const on=$("turbo").checked;
-  ["pop","workers","games","gpu","elite","mutR","mutS"].forEach(id=>{
-    const el=$(id);el.disabled=on;
-    const lbl=el.closest("label");
-    if(lbl)lbl.classList.toggle("locked",on);
-  });
-  $("autoSplit").disabled=on;
-  if(on){
-    $("autoSplit").checked=true;$("autoSplit").dispatchEvent(new Event("change"));
-    setSlider("workers",navigator.hardwareConcurrency||4);
-    setSlider("games",$("games").max);
-    log("auto-turbo enabled — population will hill-climb toward this device's ceiling each generation"+(state.training?" (workers/GPU split need a restart to change mid-run)":""));
-  }else{
-    log("auto-turbo disabled — manual settings restored");
-  }
-});
+syncMaxMode();
 
 $("start").onclick=()=>{
   if(state.training){state.training=false;$("start").textContent="Stopping…";return}
-  state.training=true;state.best=null;state.gpuRate=0;state.cpuRate=0;state.gps=0;
+  state.training=true;
   $("start").textContent="Stop training";$("start").classList.remove("primary");
   $("load").disabled=true;
-  log("training started · pop "+$("pop").value+" · "+$("hid").value+" hidden · "+($("workers").value)+" workers"+(gpu.ok?" + GPU":""));
+  log("training started · "+$("hid").value+" hidden · board "+$("board").value+" · batch "+$("games").value);
   acquireWakeLock();
   train().catch(e=>{console.error(e);state.training=false;killPool();releaseWakeLock();$("start").textContent="Start training";$("start").classList.add("primary");$("load").disabled=false;log("training failed: "+e.message)});
 };
@@ -1381,7 +1545,7 @@ $("download").onclick=()=>{
   const json=brainToJSON();if(!json){log("no brain yet — train first");return}
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));
-  a.download="snake-brain-gen"+state.brain.gen+".json";a.click();
+  a.download="snake-brain-ep"+state.brain.gen+".json";a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 };
 $("copy").onclick=async()=>{
@@ -1390,13 +1554,28 @@ $("copy").onclick=async()=>{
 };
 $("savelocal").onclick=()=>{
   const json=brainToJSON();if(!json){log("no brain yet — train first");return}
-  try{localStorage.setItem("snake-neuro-brain",json);log("saved brain to local storage (gen "+state.brain.gen+") — it will be picked up on next page load")}
+  try{localStorage.setItem("snake-neuro-brain",json);log("saved brain to local storage (episode "+state.brain.gen+")")}
   catch(e){log("could not save to local storage: "+e.message)}
 };
+$("deletebrain").onclick=()=>{
+  if(state.training){log("stop training first — the current run can autosave the brain again");return}
+  const hasBrain=!!state.brain||!!localStorage.getItem("snake-neuro-brain");
+  if(!hasBrain){log("no saved brain to delete");return}
+  if(!confirm("Delete the saved Snake AI brain? This cannot be undone unless you have downloaded a copy."))return;
+  try{localStorage.removeItem("snake-neuro-brain")}catch(e){log("could not delete local brain: "+e.message);return}
+  state.brain=null;
+  state.episode=0;state.bestScore=0;state.history=[];state.recentScores=[];state.recentRewards=[];
+  state.recentLen=[];state.recentLoss=[];state.recentQ=[];state.recentQMax=[];state.recentTD=[];
+  state.evalHistory=[];state.evalAvg=0;state.evalBest=0;state.deaths={};state.evalDeaths={};
+  state.online=null;state.target=null;
+  render();
+  log("brain deleted — the next training run will start from fresh random weights");
+};
 $("load").onclick=()=>{
-  if(state.training){log("stop training first — a brain loaded mid-run gets overwritten by the current run's own progress within a generation, so it wouldn't actually be used");return}
+  if(state.training){log("stop training first — a brain loaded mid-run gets overwritten by the current run's own progress");return}
   $("file").click();
 };
+/* LOAD — unchanged logic and unchanged accepted schema. */
 $("file").onchange=async e=>{
   const f=e.target.files[0];if(!f)return;
   if(state.training){e.target.value="";return}
@@ -1404,61 +1583,51 @@ $("file").onchange=async e=>{
     const d=JSON.parse(await f.text());
     if(!d.weights||!d.hidden)throw new Error("not a brain file");
     if(d.weights.length!==geneLen(d.hidden)){
-      const oldIn=32,oldGeneLen=h=>h*oldIn+h+OUT*h+OUT;
+      const oldIn=28,oldOut=4,oldGeneLen=h=>h*oldIn+h+oldOut*h+oldOut;
       if(d.weights.length===oldGeneLen(d.hidden)&&(d.inputs===oldIn||d.inputs===undefined)){
-        throw new Error("this is a brain from the old 32-input observation format — it can't seed a run here (28 inputs now); starting a run will just train a fresh population instead");
+        throw new Error("this is a brain from the old 28-input observation format — it can't seed a run here (12 inputs now); starting a run will just train a fresh network instead");
       }
       throw new Error("weight count does not match hidden size");
     }
-    state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};
+    state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20,epsSteps:d.epsSteps||0};
     $("hid").value=String(d.hidden);$("oHid").textContent=String(d.hidden);
-    state.gen=state.brain.gen||0;state.history=[];state.best=null;render();
-    log("loaded brain: gen "+state.brain.gen+" · "+state.brain.apples+" apples · "+d.hidden+" hidden — will seed the next training run");
+    state.episode=state.brain.gen||0;state.bestScore=state.brain.apples||0;state.history=[];render();
+    log("loaded brain: episode "+state.brain.gen+" · "+state.brain.apples+" apples · "+d.hidden+" hidden — will seed the next training run");
   }catch(err){log("could not load brain: "+err.message)}
   e.target.value="";
 };
 
-/* capability probe */
 function renderCaps(){
   const cores=navigator.hardwareConcurrency||4;
   const caps=[];
   caps.push("<span class='badge'>CPU threads <b>"+cores+"</b></span>");
   if(navigator.deviceMemory)caps.push("<span class='badge'>RAM <b>"+navigator.deviceMemory+" GB</b></span>");
-  if(gpu.ok){
-    caps.push("<span class='badge'>GPU <b>"+(gpu.info||"WebGPU")+"</b></span>");
-    caps.push("<span class='badge'>GPU buffer <b>"+Math.round(gpu.maxStorage/1048576)+" MB</b></span>");
-  }else{
-    caps.push("<span class='badge' style='border-color:#5d3242'>GPU <b style='color:var(--bad)'>unavailable</b></span>");
-  }
+  caps.push("<span class='badge'>GPU <b>"+(GPU.ready?GPU.info:(GPU.fail?"unavailable":("gpu" in navigator?"WebGPU detected":"no WebGPU")))+"</b></span>");
   $("caps").innerHTML=caps.join("");
 }
-(async()=>{
+(()=>{
   const cores=navigator.hardwareConcurrency||4;
-  $("workers").max=String(Math.max(1,cores*2));
+  syncTurboLock();
+  $("workers").max=String(Math.max(1,cores*3));
   $("workers").value=String(cores);
   $("oWorkers").textContent=String(cores);
-  const err=await gpuInit();
-  if(gpu.ok)log("GPU compute ready — games are simulated on the GPU and CPU at the same time");
-  else log("GPU path off ("+err+") — running on all CPU cores only");
   renderCaps();
+  syncSplitLock();
+  gpuInit().then(ok=>{
+    renderCaps();
+    log(ok?"webgpu available ("+GPU.info+") — gradients run on the gpu":"no usable webgpu ("+(GPU.fail||"unknown")+") — training will run on the cpu only");
+  });
   try{
     const saved=localStorage.getItem("snake-neuro-brain");
     if(saved){
       const d=JSON.parse(saved);
       if(d&&d.weights&&d.hidden){
         if(d.weights.length===geneLen(d.hidden)){
-          state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20};
-          state.gen=state.brain.gen||0;
-          log("found a saved brain (gen "+state.brain.gen+") — it will seed the first population");
+          state.brain={hidden:d.hidden,weights:Float32Array.from(d.weights),gen:d.gen||0,apples:d.apples||0,fitness:d.fitness||0,board:d.board||20,epsSteps:d.epsSteps||0};
+          state.episode=state.brain.gen||0;state.bestScore=state.brain.apples||0;
+          log("found a saved brain (episode "+state.episode+") — it will seed the next training run");
         }else{
-          /* A brain saved before the observation vector changed (old 32
-             inputs vs today's 28) has the wrong weight count for its
-             hidden size — seeding a run with it would push a mismatched-
-             length genome into evaluate() and crash on the very first
-             generation. Leave state.brain unset so training just starts
-             from a fresh random population instead, same as if nothing
-             had been saved. */
-          log("found a saved brain, but it's from the old 32-input observation format and can't seed a run here — starting fresh instead (train a new one and it'll autosave in the current format)");
+          log("found a saved brain, but its weight count doesn't match its hidden size — starting fresh instead");
         }
       }
     }

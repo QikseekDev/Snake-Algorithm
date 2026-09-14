@@ -1507,19 +1507,21 @@ ui.competitionSpeed.oninput=()=>{renderCompetition();updateUi()};
 if(!CanvasRenderingContext2D.prototype.roundRect){CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){this.moveTo(x+r,y);this.arcTo(x+w,y,x+w,y+h,r);this.arcTo(x+w,y+h,x,y+h,r);this.arcTo(x,y+h,x,y,r);this.arcTo(x,y,x+w,y,r);return this}}
 
 /* ============================================================
-   Neuroevolution AI — trained live in the browser
-   A small feed-forward net (32 -> hidden -> 4) is evolved by a
-   genetic algorithm running inside Web Workers, so training uses
-   every CPU core and never blocks the page. Brains can be kept in
-   localStorage or written straight to disk.
+   Trained brain (DQN, train.html learning core)
+   Observation layout MUST match sense() in train.html exactly:
+     0..2  1 if relative action a (straight/right/left) dies now
+     3..5  fraction of reachable free space after action a (flood fill)
+     6     apple offset projected on the heading
+     7     apple offset projected on the right vector
+     8     normalised manhattan distance to the apple
+     9     snake length / board area
+     10    normalised hunger (moves since the last apple)
+     11    1 if some safe action still leaves the tail reachable
+   Outputs are 3 RELATIVE actions (straight, turn right, turn left),
+   not 4 absolute directions.
    ============================================================ */
-/* 28 inputs: danger[4] + dir[4] + tail[4] + relApple[2] + headPos[2] +
-   wallDist[4] + bodyRay[8]. Must match sense()/the WGSL shader in
-   train.html exactly, group for group — see the big comment above IN
-   in train.html for why each group is here. */
-const NEURO_IN=28, NEURO_OUT=4;
+const NEURO_IN=12, NEURO_OUT=3;
 const NEURO_KEY="snake-neuro-brain";
-const DIR8=[[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];
 const geneLen=h=>h*NEURO_IN+h+NEURO_OUT*h+NEURO_OUT;
 
 const neuro={
@@ -1537,35 +1539,62 @@ const neuro={
   fileHandle:null,
 };
 
-/* ---------- shared inference (must match the worker exactly) ---------- */
-const NEURO_D4=[[0,-1],[1,0],[0,1],[-1,0]];
-function neuroSense(b,occ,head,food,dirIdx,tailIdx,inp){
-  let i=0;
-  const hx=head.x,hy=head.y;
-  for(let d=0;d<4;d++){
-    const nx=hx+NEURO_D4[d][0],ny=hy+NEURO_D4[d][1];
-    inp[i++]=(nx<0||ny<0||nx>=b||ny>=b||occ[ny*b+nx])?1:0;
+/* ---------- shared inference (must match the trainer exactly) ---------- */
+const NEURO_D4=[[0,-1],[1,0],[0,1],[-1,0]];   // same order as ORDER
+const neuroFF={mark:null,queue:null,stamp:0,tailSeen:0};
+function neuroRel(dirIdx,a){return a===0?dirIdx:(a===1?(dirIdx+1)%4:(dirIdx+3)%4)}
+/* Flood fill the free area reachable after the move; the tail cell counts as
+   free when the snake is not eating, because it moves away this step. */
+function neuroReach(b,n,occ,nx,ny,tc){
+  if(!neuroFF.mark||neuroFF.mark.length<n){neuroFF.mark=new Int32Array(n);neuroFF.queue=new Int32Array(n);neuroFF.stamp=0}
+  neuroFF.stamp++;
+  const st=neuroFF.stamp,mk=neuroFF.mark,q=neuroFF.queue;
+  let head=0,tail=1,cnt=0;
+  const start=ny*b+nx;mk[start]=st;q[0]=start;
+  while(head<tail){
+    const c=q[head++];cnt++;
+    const cx=c%b,cy=(c-cx)/b;
+    for(let d=0;d<4;d++){
+      const xx=cx+NEURO_D4[d][0],yy=cy+NEURO_D4[d][1];
+      if(xx<0||yy<0||xx>=b||yy>=b)continue;
+      const ci=yy*b+xx;
+      if(mk[ci]===st)continue;
+      if(occ[ci]&&ci!==tc)continue;
+      mk[ci]=st;q[tail++]=ci;
+    }
   }
-  for(let k=0;k<4;k++)inp[i++]=k===dirIdx?1:0;
-  for(let k=0;k<4;k++)inp[i++]=k===tailIdx?1:0;
+  neuroFF.tailSeen=(tc>=0&&mk[tc]===st)?1:0;
+  return cnt;
+}
+function neuroSense(b,occ,head,food,dirIdx,len,hunger,limit,tailCell,inp){
+  const n=b*b,hx=head.x,hy=head.y;
+  let freeCells=n-len;if(freeCells<1)freeCells=1;
   const fx=food?food.x:hx,fy=food?food.y:hy;
-  inp[i++]=(fx-hx)/b;
-  inp[i++]=(fy-hy)/b;
-  inp[i++]=hx/(b-1);
-  inp[i++]=hy/(b-1);
-  inp[i++]=hy/b;
-  inp[i++]=(b-1-hx)/b;
-  inp[i++]=(b-1-hy)/b;
-  inp[i++]=hx/b;
-  for(let k=0;k<8;k++){
-    const dx=DIR8[k][0],dy=DIR8[k][1];
-    let lim=1e9;
-    if(dx>0){lim=b-hx}else if(dx<0){lim=hx+1}
-    if(dy>0){if(b-hy<lim)lim=b-hy}else if(dy<0){if(hy+1<lim)lim=hy+1}
-    let bodyv=0,idx=hy*b+hx;const st=dy*b+dx;
-    for(let q=1;q<lim;q++){idx+=st;if(occ[idx]){bodyv=1/q;break}}
-    inp[i++]=bodyv;
+  let anyTail=0;
+  for(let a=0;a<3;a++){
+    const dd=neuroRel(dirIdx,a);
+    const nx=hx+NEURO_D4[dd][0],ny=hy+NEURO_D4[dd][1];
+    let dead=(nx<0||ny<0||nx>=b||ny>=b),eats=false,ci=-1;
+    if(!dead){
+      ci=ny*b+nx;eats=(nx===fx&&ny===fy);
+      if(occ[ci]&&!(!eats&&ci===tailCell))dead=true;
+    }
+    inp[a]=dead?1:0;
+    if(dead){inp[3+a]=0}
+    else{
+      const c=neuroReach(b,n,occ,nx,ny,eats?-1:tailCell);
+      const frac=c/freeCells;inp[3+a]=frac>1?1:frac;
+      if(neuroFF.tailSeen)anyTail=1;
+    }
   }
+  const dx=fx-hx,dy=fy-hy;
+  const f=NEURO_D4[dirIdx],r=NEURO_D4[(dirIdx+1)%4];
+  inp[6]=(dx*f[0]+dy*f[1])/b;
+  inp[7]=(dx*r[0]+dy*r[1])/b;
+  inp[8]=(Math.abs(dx)+Math.abs(dy))/(2*b);
+  inp[9]=len/n;
+  const hg=hunger/limit;inp[10]=hg>1?1:hg;
+  inp[11]=anyTail;
   return inp;
 }
 function neuroForward(w,hid,inp,out,scratch){
@@ -1576,77 +1605,83 @@ function neuroForward(w,hid,inp,out,scratch){
   for(let o=0;o<NEURO_OUT;o++)out[o]+=w[p++];
   return out;
 }
+/* Same greedy rule the trainer evaluates with: best Q among the moves that
+   don't kill us this step, ties broken by remaining free space. */
+function neuroGreedy(inp,out){
+  let bi=-1;
+  for(let o=0;o<3;o++){
+    if(inp[o]>=0.5)continue;
+    if(bi<0){bi=o;continue}
+    const d=out[o]-out[bi];
+    if(d>1e-6||(Math.abs(d)<=1e-6&&inp[3+o]>inp[3+bi]))bi=o;
+  }
+  if(bi<0){bi=0;for(let o=1;o<3;o++)if(out[o]>out[bi])bi=o}
+  return bi;
+}
 
 const neuroBuf={inp:new Float32Array(NEURO_IN),out:new Float32Array(NEURO_OUT),hid:new Float32Array(256),occ:null,b:0};
-/* Advisor used by Hybrid/Oracle: runs one forward pass with the trained
-   brain and returns its preferred move + confidence. The planner adds a
-   flat score bonus to routes that start with that move, so the brain can
-   only ever tilt a decision between routes that already passed every hard
-   safety check — it can never force an unsafe move. Returns null when the
-   toggle is off or no brain is loaded. */
-function neuroAdvice(st){
-  if(!adv.brain||!neuro.brain)return null;
+/* One forward pass on the live board. Returns null when no brain is loaded.
+   `hunger` is how long we've gone without growing, matching the trainer's
+   hunger input; the trainer's starve limit is max(40, 80 + area/2). */
+function neuroQuery(st,hunger){
+  if(!neuro.brain)return null;
   const b=st.board,n=b*b;
   if(neuroBuf.b!==b){neuroBuf.b=b;neuroBuf.occ=new Uint8Array(n)}
   const occ=neuroBuf.occ;occ.fill(0);
   for(let i=0;i<st.snake.length;i++)occ[st.snake[i].y*b+st.snake[i].x]=1;
-  const tail=st.snake[st.snake.length-1],prev=st.snake[st.snake.length-2]||st.snake[0];
-  const tdx=Math.sign(prev.x-tail.x),tdy=Math.sign(prev.y-tail.y);
-  const tailIdx=Math.max(0,ORDER.findIndex(d=>DIRS[d].x===tdx&&DIRS[d].y===tdy));
+  const tail=st.snake[st.snake.length-1];
+  const tailCell=tail.y*b+tail.x;
   const dirIdx=ORDER.indexOf(st.dir);
+  /* the trainer plays with exactly one apple — show the net the nearest one */
   let near=null,nd=Infinity;
   for(const f of st.foods){const d=man(st.snake[0],f);if(d<nd){nd=d;near=f}}
-  neuroSense(b,occ,st.snake[0],near,dirIdx,tailIdx,neuroBuf.inp);
+  const limit=Math.max(40,80+n/2);
+  neuroSense(b,occ,st.snake[0],near,dirIdx<0?0:dirIdx,st.snake.length,hunger||0,limit,tailCell,neuroBuf.inp);
   const hid=neuro.brain.hidden;
   if(neuroBuf.hid.length<hid)neuroBuf.hid=new Float32Array(hid);
   neuroForward(neuro.brain.weights,hid,neuroBuf.inp,neuroBuf.out,neuroBuf.hid);
-  const scored=ORDER.map((d,i)=>[neuroBuf.out[i],d]).filter(s=>!opposite(s[1],st.dir)).sort((a,b2)=>b2[0]-a[0]);
-  if(!scored.length)return null;
-  const conf=scored.length>1?Math.max(0,scored[0][0]-scored[1][0]):Math.abs(scored[0][0]);
-  return {pick:scored[0][1],conf,w:Math.round(adv.brainW*400*(0.5+Math.min(1.5,conf)))};
+  const rel=neuroGreedy(neuroBuf.inp,neuroBuf.out);
+  const q=[neuroBuf.out[0],neuroBuf.out[1],neuroBuf.out[2]];
+  const sorted=q.slice().sort((a,c)=>c-a);
+  const dirOf=a=>ORDER[neuroRel(dirIdx<0?0:dirIdx,a)];
+  return {rel,pick:dirOf(rel),q,conf:Math.max(0,sorted[0]-sorted[1]),dirOf,
+          danger:[neuroBuf.inp[0],neuroBuf.inp[1],neuroBuf.inp[2]],
+          space:[neuroBuf.inp[3],neuroBuf.inp[4],neuroBuf.inp[5]],
+          tailSafe:neuroBuf.inp[11]};
+}
+/* Advisor used by Hybrid/Oracle: the planner adds a flat score bonus to
+   routes that start with the brain's preferred move, so the brain can only
+   ever tilt a decision between routes that already passed every hard safety
+   check — it can never force an unsafe move. */
+function neuroAdvice(st){
+  if(!adv.brain||!neuro.brain)return null;
+  const r=neuroQuery(st,st.neuroStall||0);
+  if(!r)return null;
+  return {pick:r.pick,conf:r.conf,w:Math.round(adv.brainW*400*(0.5+Math.min(1.5,r.conf)))};
 }
 function neuroMove(st){
   st.path=[];
-  st.debug={lines:["algorithm: Neural Net (neuroevolution)"]};
+  st.debug={lines:["algorithm: Neural Net (DQN brain)"]};
   const dbg=st.debug;
   if(!neuro.brain){
     dbg.lines.push("no brain loaded — load a saved brain or train one at /train.html");
     dbg.lines.push("decision: falling back to survival move");
     return survivalMove(st)||floodMove(st);
   }
-  const b=st.board,n=b*b;
-  if(neuroBuf.b!==b){neuroBuf.b=b;neuroBuf.occ=new Uint8Array(n)}
-  const occ=neuroBuf.occ;occ.fill(0);
-  for(let i=0;i<st.snake.length;i++)occ[st.snake[i].y*b+st.snake[i].x]=1;
-  /* A feed-forward net is deterministic: the same board state always maps
-     to the same move, so it can lock into a cycle and never break out. In
-     training such a run simply starves and gets penalised; in the live game
-     nothing ever ended the loop, which is why "net play" looked dumb the
-     moment training (which kept swapping the brain every generation, and so
-     accidentally broke every loop) stopped. Track how long we've gone
-     without growing and hand over to a safe route when it stalls. */
+  /* A feed-forward net is deterministic: the same board state always maps to
+     the same move, so it can lock into a cycle and never break out. In
+     training that run simply starves; live, nothing ended the loop. Track how
+     long we've gone without growing and hand over to a safe route when it
+     stalls — this doubles as the trainer's "hunger" input. */
   if(st.neuroLen!==st.snake.length){st.neuroLen=st.snake.length;st.neuroStall=0}
   else st.neuroStall=(st.neuroStall||0)+1;
+  const b=st.board;
   const stallLimit=60+b*4;
-  const tail=st.snake[st.snake.length-1],prev=st.snake[st.snake.length-2]||st.snake[0];
-  const tdx=Math.sign(prev.x-tail.x),tdy=Math.sign(prev.y-tail.y);
-  const tailIdx=Math.max(0,ORDER.findIndex(d=>DIRS[d].x===tdx&&DIRS[d].y===tdy));
-  const dirIdx=ORDER.indexOf(st.dir);
-  /* the trainer plays with exactly one apple — show the net the nearest one
-     only, so live sensing matches the worker's inputs exactly */
-  let near=null,nd=Infinity;
-  for(const f of st.foods){const d=man(st.snake[0],f);if(d<nd){nd=d;near=f}}
-  neuroSense(b,occ,st.snake[0],near,dirIdx,tailIdx,neuroBuf.inp);
-  const hid=neuro.brain.hidden;
-  if(neuroBuf.hid.length<hid)neuroBuf.hid=new Float32Array(hid);
-  neuroForward(neuro.brain.weights,hid,neuroBuf.inp,neuroBuf.out,neuroBuf.hid);
-  /* the worker never lets the net reverse into its own neck — it re-picks the
-     best non-reversing output. Live play used to take the raw argmax and then
-     let the safety guard clean it up, which produced a different move than the
-     one the genome was actually scored on. */
-  const scored=ORDER.map((d,i)=>[neuroBuf.out[i],d]).filter(s=>!opposite(s[1],st.dir)).sort((a,b2)=>b2[0]-a[0]);
-  dbg.lines.push("brain: gen "+(neuro.brain.gen||0)+" · "+hid+" hidden neurons · best "+(neuro.brain.apples||0)+" apples in training");
-  dbg.lines.push("outputs: "+scored.map(s=>s[1]+" "+s[0].toFixed(2)).join(", "));
+  const r=neuroQuery(st,st.neuroStall||0);
+  const names=["straight","right","left"];
+  dbg.lines.push("brain: episode "+(neuro.brain.gen||0)+" · "+neuro.brain.hidden+" hidden neurons · best "+(neuro.brain.apples||0)+" apples in training"+(neuro.brain.board&&Number(neuro.brain.board)!==b?" · trained on a "+neuro.brain.board+"×"+neuro.brain.board+" board":""));
+  dbg.lines.push("Q: "+names.map((nm,i)=>nm+" "+r.q[i].toFixed(2)).join(", "));
+  dbg.lines.push("danger: "+names.map((nm,i)=>nm+" "+(r.danger[i]?"fatal":"ok")).join(", ")+" · free space: "+r.space.map(v=>Math.round(v*100)+"%").join("/")+" · tail reachable: "+(r.tailSafe?"yes":"no"));
   if(st.neuroStall>stallLimit){
     const p=safeFoodPath(st,"astar");
     if(p&&p.length){
@@ -1656,13 +1691,16 @@ function neuroMove(st){
     const m=survivalMove(st,{food:true});
     if(m){dbg.lines.push("anti-loop: net stalled "+st.neuroStall+" moves — survival move toward the apple");return m}
   }
-  let pick=scored.length?scored[0][1]:st.dir;
+  let pick=r.pick;
   if(neuro.guard){
+    /* rank the three relative actions by Q, then take the best one that is
+       legal and keeps the tail reachable */
+    const order=[0,1,2].sort((a,c)=>r.q[c]-r.q[a]).map(a=>r.dirOf(a));
     const legal=legalMoves(st);
-    const safe=scored.find(s=>legal.includes(s[1])&&(()=>{const body=bodyAfter(st,s[1]);return body&&tailReachable(st,body)})());
-    const ok=safe||scored.find(s=>legal.includes(s[1]));
-    if(ok&&ok[1]!==pick)dbg.lines.push("safety guard: overrode "+pick+" (fatal) with "+ok[1]);
-    if(ok)pick=ok[1];
+    const safe=order.find(d=>legal.includes(d)&&(()=>{const body=bodyAfter(st,d);return body&&tailReachable(st,body)})());
+    const ok=safe||order.find(d=>legal.includes(d));
+    if(ok&&ok!==pick)dbg.lines.push("safety guard: overrode "+pick+" (fatal) with "+ok);
+    if(ok)pick=ok;
   }
   dbg.lines.push("decision: "+pick+" · "+(st.neuroStall||0)+" moves since last apple");
   return pick;
@@ -1682,15 +1720,15 @@ function brainFromJSON(text){
   const d=JSON.parse(text);
   if(!d||!d.weights||!d.hidden)throw new Error("not a brain file");
   if(d.weights.length!==geneLen(d.hidden)){
-    /* Distinguish "this file is just corrupt/unrelated" from "this is a
-       real brain, but trained before the observation vector changed" —
-       old brains here used 32 inputs (8 rays × 3 + 4 dir + 4 tail) instead
-       of today's 28. Weights from one layout are meaningless read against
-       the other (same slot means a different feature entirely), so there
-       is no way to auto-upgrade it — it has to be retrained. */
-    const oldIn=32,oldGeneLen=h=>h*oldIn+h+NEURO_OUT*h+NEURO_OUT;
-    if(d.weights.length===oldGeneLen(d.hidden)&&(d.inputs===oldIn||d.inputs===undefined)){
-      throw new Error("this brain was trained with the old 32-input observation format and isn't compatible with the current 28-input trainer — retrain (or load an older copy of this page) to use it");
+    /* Distinguish "this file is just corrupt/unrelated" from "this is a real
+       brain, but trained before the observation vector changed". Weights from
+       one layout are meaningless read against another (the same slot means a
+       different feature entirely), so there is no auto-upgrade — retrain. */
+    const legacy=[[32,4],[28,4]];
+    for(const [oi,oo] of legacy){
+      if(d.weights.length===oi*d.hidden+d.hidden+oo*d.hidden+oo){
+        throw new Error("this brain was trained with the older "+oi+"-input / "+oo+"-output format and isn't compatible with the current 12-input trainer — retrain it in train.html to use it here");
+      }
     }
     throw new Error("weight count does not match hidden size");
   }
