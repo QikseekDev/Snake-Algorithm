@@ -71,6 +71,7 @@ canvas#chart{width:100%;height:210px;border:1px solid var(--line);border-radius:
         <div class="stat"><span>Active actors</span><strong id="sActors">-</strong></div>
         <div class="stat"><span>Chunk size (steps)</span><strong id="sChunk">-</strong></div>
         <div class="stat"><span>Plateau</span><strong id="sPlateau">-</strong></div>
+        <div class="stat"><span>Map (curriculum)</span><strong id="sBoard">-</strong></div>
         <div class="stat wide"><span>Action distribution (straight / right / left)</span><strong id="sActions">-</strong></div>
         <div class="stat wide"><span>Replay composition (apple / death / danger / plain)</span><strong id="sComp">-</strong></div>
         <div class="stat wide"><span>Death reasons (training)</span><strong id="sDeaths">-</strong></div>
@@ -113,7 +114,7 @@ canvas#chart{width:100%;height:210px;border:1px solid var(--line);border-radius:
       <div class="rows">
         <label>Batch size <b id="oGames">128</b><input id="games" type="range" min="8" max="256" step="8" value="128"></label>
         <label>Move limit <b id="oSteps">1200</b><input id="steps" type="range" min="200" max="4000" step="100" value="1200"></label>
-        <label>Board <b id="oBoard">12</b><input id="board" type="range" min="8" max="24" step="1" value="12"></label>
+        <label>Board <b id="oBoard">12</b><input id="board" type="range" min="6" max="24" step="1" value="12"></label>
         <label>Target sync (updates) <b id="oElite">10</b><input id="elite" type="range" min="1" max="50" step="1" value="10"></label>
         <label>Epsilon decay (episodes) <b id="oMutR">50000</b><input id="mutR" type="range" min="100" max="100000" step="1000" value="50000"></label>
         <label>Learning rate ×1e-5 <b id="oMutS">10</b><input id="mutS" type="range" min="1" max="100" step="1" value="10"></label>
@@ -125,6 +126,11 @@ canvas#chart{width:100%;height:210px;border:1px solid var(--line);border-radius:
         <b style="color:var(--text);text-transform:none;letter-spacing:normal;font-size:13px">Auto-adjust move limit</b>
       </label>
       <p class="sub" style="font-size:12px" id="stepsHelp">Off by default, since it changes the scoring conditions mid-run. Turn it on to let the move limit grow every 10 episodes when runs keep hitting the cap or the score stalls. It never shrinks.</p>
+      <label style="display:flex;align-items:center;flex-direction:row;gap:8px;margin:10px 0 6px">
+        <input id="autoBoard" type="checkbox" checked style="width:16px;height:16px;margin:0">
+        <b style="color:var(--text);text-transform:none;letter-spacing:normal;font-size:13px">Auto board curriculum (6×6 → 20×20)</b>
+      </label>
+      <p class="sub" style="font-size:12px">Part of AI MAXXING: the map grows mid-run instead of staying fixed. Budgets per stage — 6×6 18k, 8×8 30k, 10×10 45k, 12×12 75k, 14×14 110k, 16×16 150k, 18×18 225k episodes, then 20×20 keeps the rest (the biggest budget). A stage ends early if greedy evaluation already clears its apple target. The network transfers because every input is board-relative, and the move limit ratchets up with the map. Save format is untouched.</p>
       <p class="sub" style="font-size:12px">Rewards are normalised to roughly [-1,+1] (apple +1, death -1, small step cost, potential-based food shaping) so Q-values cannot explode. n-step returns, discount, replay mixture quotas and the exploration controller are fixed in code — see <code>cfgRead()</code> and <code>EXPLORE</code> in the script.</p>
     </div>
   </div>
@@ -1030,6 +1036,69 @@ function maybeAutoSteps(cfg){
   setSlider("steps",newSteps);
 }
 
+/* =========================================================
+   BOARD CURRICULUM (auto map growth, part of AI MAXXING)
+   -------------------------------------------------------
+   The 12 network inputs are all board-relative (danger flags, direction,
+   food bearing, normalised distances, length/area), so one net transfers
+   across board sizes. Training small first makes apples dense and credit
+   assignment short; the board then grows once the policy has actually
+   learned that stage. Each stage gets its own episode budget, taken as the
+   midpoint of the suggested ranges, and a stage can finish EARLY when
+   greedy evaluation clears its apple target. Nothing about the saved JSON
+   format changes — `board` in the export is just the board in use.
+   ========================================================= */
+const BOARD_CURRICULUM=[
+  {board:6, budget:18000,  target:9},   // 10k–25k
+  {board:8, budget:30000,  target:14},  // 20k–40k
+  {board:10,budget:45000,  target:20},  // 30k–60k
+  {board:12,budget:75000,  target:28},  // 50k–100k
+  {board:14,budget:110000, target:36},  // 75k–150k
+  {board:16,budget:150000, target:45},  // 100k–200k
+  {board:18,budget:225000, target:55},  // 150k–300k
+  {board:20,budget:Infinity,target:Infinity} // 250k–500k+ (largest budget)
+];
+function curriculumStageStart(i){let s=0;for(let k=0;k<i;k++)s+=BOARD_CURRICULUM[k].budget;return s}
+function boardStageIndex(board){
+  for(let i=0;i<BOARD_CURRICULUM.length;i++)if(BOARD_CURRICULUM[i].board>=board)return i;
+  return BOARD_CURRICULUM.length-1;
+}
+function maybeAutoBoard(cfg){
+  if(!$("autoBoard")||!$("autoBoard").checked)return;
+  if(state._boardStage==null)return;
+  if(state.episode%25!==0)return;
+  if(state._lastAutoBoardEp===state.episode)return;
+  state._lastAutoBoardEp=state.episode;
+  const i=state._boardStage;
+  if(i>=BOARD_CURRICULUM.length-1)return;
+  const st=BOARD_CURRICULUM[i];
+  const done=state.episode-(state._boardStageStart||0);
+  const evalOk=state.evalHistory.length>=2&&state.evalAvg>=st.target;
+  const byEpisodes=done>=st.budget;
+  // Early promotion needs real evidence AND a minimum amount of practice.
+  if(!byEpisodes&&!(evalOk&&done>=st.budget*0.4))return;
+  advanceBoardStage(cfg,i+1,byEpisodes?"episode budget reached":"greedy eval hit "+Math.round(state.evalAvg*10)/10+" apples");
+}
+function advanceBoardStage(cfg,next,why){
+  const st=BOARD_CURRICULUM[next];
+  const maxBoard=+$("board").max;
+  const board=Math.min(st.board,maxBoard);
+  state._boardStage=next;
+  state._boardStageStart=state.episode;
+  if(board===cfg.board)return;
+  cfg.board=board;
+  setSlider("board",board);
+  // A bigger map needs more moves per apple, so the move limit ratchets up
+  // with the board (it never shrinks, same rule as the auto move limit).
+  const wantSteps=snap(Math.max(cfg.maxSteps,board*board*6),"steps");
+  if(wantSteps>cfg.maxSteps){cfg.maxSteps=wantSteps;setSlider("steps",wantSteps)}
+  // Evaluation baselines are board-specific — reset them, not the weights.
+  state.evalHistory=[];state.evalAvg=0;state.evalBest=0;state.evalDeaths={};
+  state.recentScores=[];state.recentRewards=[];state.recentLen=[];
+  state.bestScore=state.bestScore; // keep the all-time best as reported
+  log("auto board: growing map to "+board+"×"+board+" at episode "+state.episode+" — "+why);
+}
+
 function recordHistoryPoint(cfg){
   state.history.push({
     episode:state.episode,
@@ -1144,6 +1213,7 @@ async function learnFromChunk(count,cfg,gl){
   decayBoost();
   maybeEvaluate(cfg);
   maybeAutoSteps(cfg);
+  maybeAutoBoard(cfg);
   tuneTick(cfg);
   uiTick(cfg);
 }
@@ -1308,6 +1378,24 @@ async function train(){
   state.totalSteps=0;state.epsSteps=(state.brain&&state.brain.epsSteps)||0;
   state.started=performance.now();state.lastRender=0;state.gps=0;state.lastEpTime=0;
   state._lastAutoStepsEp=-1;state._autoStepsBestScore=null;state._autoStepsStall=0;state._autoStepsFloor=null;state.learnChain=Promise.resolve();
+  /* Board curriculum bootstrap: a fresh run starts at the smallest map, a
+     resumed run picks the stage its episode count has already paid for. */
+  state._lastAutoBoardEp=-1;state._boardStage=null;state._boardStageStart=0;
+  if($("autoBoard")&&$("autoBoard").checked){
+    let stage=0;
+    for(let i=0;i<BOARD_CURRICULUM.length;i++){
+      if(state.episode>=curriculumStageStart(i))stage=i;
+    }
+    state._boardStage=stage;
+    state._boardStageStart=Math.min(state.episode,curriculumStageStart(stage));
+    const board=Math.min(BOARD_CURRICULUM[stage].board,+$("board").max);
+    if(board!==cfg.board){
+      cfg.board=board;setSlider("board",board);
+      const wantSteps=snap(Math.max(cfg.maxSteps,board*board*6),"steps");
+      if(wantSteps>cfg.maxSteps){cfg.maxSteps=wantSteps;setSlider("steps",wantSteps)}
+    }
+    log("board curriculum on — starting at "+board+"×"+board+" (stage "+(stage+1)+"/"+BOARD_CURRICULUM.length+")");
+  }
   state.learnUpdates=0;state.learnSamples=0;state._nextTargetUpdate=0;
   state.plateauTicks=0;state.exploreBoost=0;state.epsFloor=0.05;
   state.perf={learnSamples:0,cpuPer:0,gpuPer:0,renderMs:0,chunkMs:0,lastChunk:0,cpuBlockMs:0,gpuSkips:0,gpuRuns:0};
@@ -1384,6 +1472,14 @@ function render(){
   $("sActors").textContent=state.training?state.activeWorkers+" / "+state.pool.length:"-";
   $("sChunk").textContent=state.training?String(state.stepsPerChunk):"-";
   $("sPlateau").textContent=state.training?(state.exploreBoost>0.05?"escaping (+"+state.exploreBoost.toFixed(2)+" eps)":state.plateauTicks+" flat evals"):"-";
+  (()=>{
+    const b=$("board").value;
+    if(state._boardStage==null||!$("autoBoard")||!$("autoBoard").checked){$("sBoard").textContent=b+"×"+b+" (fixed)";return}
+    const st=BOARD_CURRICULUM[state._boardStage];
+    const done=Math.max(0,state.episode-(state._boardStageStart||0));
+    const budget=isFinite(st.budget)?Math.round(st.budget/1000)+"k":"∞";
+    $("sBoard").textContent=b+"×"+b+" · "+Math.round(done/1000*10)/10+"k / "+budget;
+  })();
   const sh=actionShare();
   $("sActions").textContent=(sh[0]+sh[1]+sh[2])>0?sh.map(v=>Math.round(v*100)+"%").join(" / "):"-";
   if(state.rb&&state.rb.size){
