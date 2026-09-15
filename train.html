@@ -1146,7 +1146,13 @@ function ingestChunk(data,cfg){
   return data.count;
 }
 
-const GPU_MAX_FUSED=512,GPU_MAX_FUSED_HOG=1024;
+/* Bigger fused batches trade a little host RAM for far fewer CPU<->GPU
+   round trips: each gpuGradStep() call pays one submit+mapAsync round trip
+   no matter how many samples it carries, so fusing more samples per call
+   directly cuts that fixed per-call overhead without touching the DDQN
+   math at all (the loop below still runs the exact same forward/backward/
+   Adam sequence, just fewer times for the same total sample count). */
+const GPU_MAX_FUSED=768,GPU_MAX_FUSED_HOG=2048;
 
 /* Gradient work for one collected chunk. The replay ratio (samples trained
    per environment step) is kept in a sane range — the point is learning
@@ -1158,7 +1164,7 @@ async function learnFromChunk(count,cfg,gl){
   const hog=$("hog").checked;
   const baseRatio=3;
   const stuckBoost=state.exploreBoost>0.05?1.5:1;
-  const replayRatio=baseRatio*stuckBoost*(hog?clamp(state.loadMul,1,3):1);
+  const replayRatio=baseRatio*stuckBoost*(hog?clamp(state.loadMul,1,4):1);
   const budget=Math.max(cfg.batch,Math.round(count*replayRatio));
   const gLoad=GPU.ready?clamp(state.gpuLoad,0,1):0;
   let gpuBudget=Math.floor(budget*gLoad/cfg.batch)*cfg.batch;
@@ -1259,8 +1265,8 @@ function autoLoad(cfg,turbo){
   if(hog){
     const pinned=state.cpuLoad>=1&&(!GPU.ready||state.gpuLoad>=1);
     const choking=P.cpuBlockMs>blockBudget||P.chunkMs>latencyBudget;
-    if(choking)state.loadMul=clamp(state.loadMul/1.3,1,3);
-    else if(pinned)state.loadMul=clamp(state.loadMul*1.1,1,3);
+    if(choking)state.loadMul=clamp(state.loadMul/1.3,1,4);
+    else if(pinned)state.loadMul=clamp(state.loadMul*1.1,1,4);
   }else state.loadMul=1;
 
   setSlider("gpuLoad",Math.round(state.gpuLoad*100));
@@ -1297,7 +1303,7 @@ function tuneTick(cfg){
   const knobs=["chunk","workers"];
   const knob=knobs[T.k++%knobs.length];
   const d=T.dir[knob];
-  if(knob==="chunk")state.stepsPerChunk=clamp(Math.round(state.stepsPerChunk*(d>0?1.35:1/1.35)),120,hog?8000:4000);
+  if(knob==="chunk")state.stepsPerChunk=clamp(Math.round(state.stepsPerChunk*(d>0?1.35:1/1.35)),120,hog?12000:4000);
   else{
     state.activeWorkers=clamp(state.activeWorkers+d,1,state.pool.length);
     setSlider("workers",Math.min(state.activeWorkers,+$("workers").max));
@@ -1308,8 +1314,13 @@ function tuneTick(cfg){
 function uiTick(cfg){
   const now=performance.now();
   const turbo=$("turbo").checked;
-  const floor=turbo?280:200;
-  const ceil=turbo?1500:600;
+  const hog=$("hog").checked;
+  /* In hog mode the whole point is to give the training loop as much of
+     the main thread's time as possible, so canvas/DOM redraws are allowed
+     to fall back further before we force one — the brain autosave and
+     numbers underneath still update every tick regardless. */
+  const floor=hog?320:(turbo?280:200);
+  const ceil=hog?2200:(turbo?1500:600);
   state.renderEvery=clamp(state.perf.renderMs*20,floor,ceil);
   if(now-state.lastRender<=state.renderEvery)return;
   state.lastRender=now;
@@ -1350,7 +1361,11 @@ async function train(){
   const aiMax=$('aiMax')?.checked;
   if(aiMax){
     cfg.hidden=+$("hid").value;
-    cfg.batch=snap(128,'games');
+    /* 256 (the slider's max) instead of 128: a bigger minibatch means each
+       GPU round trip (submit + mapAsync) carries twice the samples, which
+       is a straight win for wall-clock throughput on the fused-batch path
+       and is still a perfectly ordinary DDQN batch size. */
+    cfg.batch=snap(256,'games');
     cfg.replayCap=snap(60000,'pop');
     cfg.targetSyncUpdates=1500;
     cfg.epsDecaySteps=2000000;
@@ -1419,7 +1434,14 @@ async function train(){
     state.rb=makeReplay(cfg.replayCap);
   }
   const hog=$("hog").checked;
-  if(hog){cfg.workers=clamp(cores,1,cores*2);state.loadMul=1.5}else state.loadMul=1;
+  /* Bug fix: this used to read clamp(cores,1,cores*2), which just returns
+     `cores` right back (it's already inside its own clamp range) — so hog
+     mode never actually spawned more actors than plain turbo did, despite
+     the "Parallel environments" slider allowing up to cores*3. Snake's
+     env-step simulation is cheap and mostly waiting on postMessage round
+     trips, so modestly oversubscribing real cores here does help keep the
+     replay buffer fed. */
+  if(hog){cfg.workers=clamp(cores*2,1,+$("workers").max);state.loadMul=1.8}else state.loadMul=1;
   state.activeWorkers=cfg.workers;
   state.stepsPerChunk=turbo?600:200;
   spawnPool(turbo?Math.max(cfg.workers,cores):cfg.workers);
